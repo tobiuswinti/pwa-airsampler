@@ -20,7 +20,8 @@
       "isolatedModules": true,
       "types": [
           "vite-plugin-pwa/client",
-          "vite/client"
+          "vite/client",
+          "web-bluetooth"
       ]
   },
   "include": ["src/**/*.ts", "router.d.ts"],
