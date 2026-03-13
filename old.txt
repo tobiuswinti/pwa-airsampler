@@ -1,0 +1,513 @@
+import { property, customElement, state } from 'lit/decorators.js';
+import { resolveRouterPath } from '../router';
+
+import '@shoelace-style/shoelace/dist/components/card/card.js';
+import '@shoelace-style/shoelace/dist/components/button/button.js';
+import '@shoelace-style/shoelace/dist/components/icon/icon.js';
+import '@shoelace-style/shoelace/dist/components/badge/badge.js';
+
+import { styles } from '../styles/shared-styles';
+
+// BLE Configuration Constants
+const DEVICE_NAME = 'AirSampler';
+const SERVICE_UUID = '32ff44d8-dbac-4fe6-bb74-ed682397c699';
+const SENSOR_CHAR_UUID = '5ae0db2e-f1d4-4736-b435-2c3fe60bd846';
+const Write_UUID = '863848ed-4743-45b5-b600-e69281cfe806';
+const RESET_CHAR_UUID = 'ee788c0b-ad3e-4e1e-b65f-e432d116d435';
+
+@customElement('app-home')
+export class AppHome extends LitElement {
+  @property() message = 'DNAir AirSampler Control';
+
+  // Reactive State
+  @state() private bleStatus = 'Disconnected';
+  @state() private statusColor = '#d13a30';
+  @state() private sensorValue = 'NaN';
+  @state() private timestamp = '';
+  @state() private lastSent = '-';
+  @state() private isConnected = false;
+
+
+  static styles = [
+    styles,
+    css`
+      #welcomeBar {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        flex-direction: column;
+        gap: 20px;
+      }
+
+      sl-card {
+        width: 100%;
+        max-width: 600px;
+      }
+
+      .status-text {
+        font-weight: bold;
+        color: var(--status-color, #d13a30);
+      }
+
+      .control-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 10px;
+        margin-top: 15px;
+      }
+
+      .sensor-display {
+        font-size: 1.5rem;
+        margin: 10px 0;
+        font-family: monospace;
+      }
+
+      sl-card::part(footer) {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+
+      @media (min-width: 750px) {
+        sl-card {
+          width: 70vw;
+        }
+      }
+    `
+  ];
+  bleDevice: any;
+  bleService: any;
+
+  // --- BLE Logic ---
+
+  async connect() {
+    try {
+
+
+      if (!this.bleDevice) {
+        this.bleDevice = await navigator.bluetooth.requestDevice({
+          filters: [{ name: DEVICE_NAME }],
+          optionalServices: [SERVICE_UUID]
+        });
+        this.bleDevice.addEventListener('gattservicedisconnected', () => this.onDisconnected());
+      }
+
+      this.bleStatus = "Connecting...";
+      this.statusColor = "orange";
+
+      const server = await this.bleDevice.gatt!.connect();
+      this.bleService = await server.getPrimaryService(SERVICE_UUID);
+
+      // Setup Notifications
+      const sensorChar = await this.bleService.getCharacteristic(SENSOR_CHAR_UUID);
+      sensorChar.addEventListener('characteristicvaluechanged', (e: any) => {
+        this.sensorValue = new TextDecoder().decode(e.target.value);
+        this.timestamp = new Date().toLocaleTimeString();
+      });
+      await sensorChar.startNotifications();
+
+      this.bleStatus = "Connected";
+      this.statusColor = "#24af37";
+      this.isConnected = true;
+
+    } catch (error) {
+      console.error("Connection failed:", error);
+      this.bleStatus = "Connection Failed";
+      this.statusColor = "#d13a30";
+      this.isConnected = false;
+    }
+  }
+
+  disconnect() {
+
+    if (this.bleDevice && this.bleDevice.gatt?.connected) {
+      this.bleDevice.gatt.disconnect();
+    }
+    this.bleStatus = "Disconnected by User";
+    this.statusColor = "red";
+    this.isConnected = false;
+  }
+
+  async sendValue(uuid: string, value: number) {
+    if (!this.bleService) {
+      alert("Not connected!");
+      return;
+    }
+    try {
+      const char = await this.bleService.getCharacteristic(uuid);
+      await char.writeValue(new Uint8Array([value]));
+      this.lastSent = value.toString();
+    } catch (e) {
+      console.error(e);
+    }
+  }
+
+async sendString(uuid: string, value: string) {
+  if (!this.bleService) {
+    alert("Not connected!");
+    return;
+  }
+
+  try {
+    const char = await this.bleService.getCharacteristic(uuid);
+
+    // 1. Initialize the encoder
+    const encoder = new TextEncoder();
+
+    // 2. Convert the string into a Uint8Array (bytes)
+    const encodedData = encoder.encode(value);
+
+    // 3. Write the entire array to the characteristic
+    await char.writeValue(encodedData);
+
+    this.lastSent = value;
+    console.log(`Sent string: ${value}`);
+  } catch (e) {
+    console.error("Failed to send string:", e);
+  }
+}
+
+  share() {
+    if ((navigator as any).share) {
+      (navigator as any).share({
+        title: 'DNAir AirSampler PWA',
+        text: 'Monitoring air quality with DNAir.',
+        url: window.location.href,
+      });
+    }
+  }
+
+  render() {
+    return html`
+      <app-header></app-header>
+
+      <main>
+        <div id="welcomeBar" style="--status-color: ${this.statusColor}">
+
+          <sl-card>
+            <div slot="header">
+              <h2>${this.message}</h2>
+              <p>Status: <span class="status-text">${this.bleStatus}</span></p>
+            </div>
+
+            <div class="sensor-display">
+              Value: <strong>${this.sensorValue}</strong>
+            </div>
+            <small>Last reading: ${this.timestamp}</small>
+
+            <div slot="footer">
+              <sl-button variant="success" outline @click="${this.connect}" ?disabled="${this.isConnected}">
+                Connect
+              </sl-button>
+              <sl-button variant="danger" outline @click="${this.disconnect}" ?disabled="${!this.isConnected}">
+                Disconnect
+              </sl-button>
+            </div>
+          </sl-card>
+
+          <sl-card>
+            <div slot="header"><strong>Sampler Controls</strong></div>
+
+            <div class="control-grid">
+              <sl-button @click="${() => this.sendValue(Write_UUID, 11)}">Fan On</sl-button>
+              <sl-button @click="${() => this.sendValue(Write_UUID, 10)}">Fan Off</sl-button>
+              <sl-button @click="${() => this.sendValue(Write_UUID, 21)}">Open Clamp</sl-button>
+              <sl-button @click="${() => this.sendValue(Write_UUID, 20)}">Close Clamp</sl-button>
+              <sl-button @click="${() => this.sendValue(Write_UUID, 31)}">Rotate</sl-button>
+              <sl-button @click="${() => this.sendValue(Write_UUID, 41)}">Read RFID</sl-button>
+            </div>
+
+            <hr style="margin: 20px 0; border: 0; border-top: 1px solid #eee;">
+
+            <div class="control-grid">
+              <sl-button variant="warning" @click="${() => this.sendValue(RESET_CHAR_UUID, 51)}">Reset System</sl-button>
+              <sl-button variant="neutral" @click="${() => this.sendValue(RESET_CHAR_UUID, 61)}">Test Run</sl-button>
+            </div>
+
+            <p style="margin-top: 15px;"><small>Last command sent: ${this.lastSent}</small></p>
+          </sl-card>
+
+          <div style="display: flex; gap: 10px;">
+            <sl-button href="${resolveRouterPath('about')}" variant="primary">
+              <sl-icon slot="prefix" name="info-circle"></sl-icon>
+              About Device
+            </sl-button>
+
+            ${'share' in navigator
+              ? html`
+                <sl-button @click="${this.share}">
+                  <sl-icon slot="prefix" name="share"></sl-icon>
+                  Share App
+                </sl-button>`
+              : null}
+          </div>
+
+        </div>
+      </main>
+    `;
+  }
+}
+import { property, customElement, state } from 'lit/decorators.js';
+import { resolveRouterPath } from '../router';
+
+import '@shoelace-style/shoelace/dist/components/card/card.js';
+import '@shoelace-style/shoelace/dist/components/button/button.js';
+import '@shoelace-style/shoelace/dist/components/icon/icon.js';
+import '@shoelace-style/shoelace/dist/components/badge/badge.js';
+
+import { styles } from '../styles/shared-styles';
+
+// BLE Configuration Constants
+const DEVICE_NAME = 'AirSampler';
+const SERVICE_UUID = '32ff44d8-dbac-4fe6-bb74-ed682397c699';
+const SENSOR_CHAR_UUID = '5ae0db2e-f1d4-4736-b435-2c3fe60bd846';
+const Write_UUID = '863848ed-4743-45b5-b600-e69281cfe806';
+const RESET_CHAR_UUID = 'ee788c0b-ad3e-4e1e-b65f-e432d116d435';
+
+@customElement('app-home')
+export class AppHome extends LitElement {
+  @property() message = 'DNAir AirSampler Control';
+
+  // Reactive State
+  @state() private bleStatus = 'Disconnected';
+  @state() private statusColor = '#d13a30';
+  @state() private sensorValue = 'NaN';
+  @state() private timestamp = '';
+  @state() private lastSent = '-';
+  @state() private isConnected = false;
+
+
+  static styles = [
+    styles,
+    css`
+      #welcomeBar {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        flex-direction: column;
+        gap: 20px;
+      }
+
+      sl-card {
+        width: 100%;
+        max-width: 600px;
+      }
+
+      .status-text {
+        font-weight: bold;
+        color: var(--status-color, #d13a30);
+      }
+
+      .control-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 10px;
+        margin-top: 15px;
+      }
+
+      .sensor-display {
+        font-size: 1.5rem;
+        margin: 10px 0;
+        font-family: monospace;
+      }
+
+      sl-card::part(footer) {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+
+      @media (min-width: 750px) {
+        sl-card {
+          width: 70vw;
+        }
+      }
+    `
+  ];
+  bleDevice: any;
+  bleService: any;
+
+  // --- BLE Logic ---
+
+  async connect() {
+    try {
+
+
+      if (!this.bleDevice) {
+        this.bleDevice = await navigator.bluetooth.requestDevice({
+          filters: [{ name: DEVICE_NAME }],
+          optionalServices: [SERVICE_UUID]
+        });
+        this.bleDevice.addEventListener('gattservicedisconnected', () => this.onDisconnected());
+      }
+
+      this.bleStatus = "Connecting...";
+      this.statusColor = "orange";
+
+      const server = await this.bleDevice.gatt!.connect();
+      this.bleService = await server.getPrimaryService(SERVICE_UUID);
+
+      // Setup Notifications
+      const sensorChar = await this.bleService.getCharacteristic(SENSOR_CHAR_UUID);
+      sensorChar.addEventListener('characteristicvaluechanged', (e: any) => {
+        this.sensorValue = new TextDecoder().decode(e.target.value);
+        this.timestamp = new Date().toLocaleTimeString();
+      });
+      await sensorChar.startNotifications();
+
+      this.bleStatus = "Connected";
+      this.statusColor = "#24af37";
+      this.isConnected = true;
+
+    } catch (error) {
+      console.error("Connection failed:", error);
+      this.bleStatus = "Connection Failed";
+      this.statusColor = "#d13a30";
+      this.isConnected = false;
+    }
+  }
+
+  disconnect() {
+
+    if (this.bleDevice && this.bleDevice.gatt?.connected) {
+      this.bleDevice.gatt.disconnect();
+    }
+    this.bleStatus = "Disconnected by User";
+    this.statusColor = "red";
+    this.isConnected = false;
+  }
+
+  async sendValue(uuid: string, value: number) {
+    if (!this.bleService) {
+      alert("Not connected!");
+      return;
+    }
+    try {
+      const char = await this.bleService.getCharacteristic(uuid);
+      await char.writeValue(new Uint8Array([value]));
+      this.lastSent = value.toString();
+    } catch (e) {
+      console.error(e);
+    }
+  }
+
+async sendString(uuid: string, value: string) {
+  if (!this.bleService) {
+    alert("Not connected!");
+    return;
+  }
+
+  try {
+    const char = await this.bleService.getCharacteristic(uuid);
+
+    // 1. Initialize the encoder
+    const encoder = new TextEncoder();
+
+    // 2. Convert the string into a Uint8Array (bytes)
+    const encodedData = encoder.encode(value);
+
+    // 3. Write the entire array to the characteristic
+    await char.writeValue(encodedData);
+
+    this.lastSent = value;
+    console.log(`Sent string: ${value}`);
+  } catch (e) {
+    console.error("Failed to send string:", e);
+  }
+}
+
+  share() {
+    if ((navigator as any).share) {
+      (navigator as any).share({
+        title: 'DNAir AirSampler PWA',
+        text: 'Monitoring air quality with DNAir.',
+        url: window.location.href,
+      });
+    }
+  }
+
+  render() {
+    return html`
+      <app-header></app-header>
+
+      <main>
+        <div id="welcomeBar" style="--status-color: ${this.statusColor}">
+
+          <sl-card>
+            <div slot="header">
+              <h2>${this.message}</h2>
+              <p>Status: <span class="status-text">${this.bleStatus}</span></p>
+            </div>
+
+            <div class="sensor-display">
+              Value: <strong>${this.sensorValue}</strong>
+            </div>
+            <small>Last reading: ${this.timestamp}</small>
+
+            <div slot="footer">
+              <sl-button variant="success" outline @click="${this.connect}" ?disabled="${this.isConnected}">
+                Connect
+              </sl-button>
+              <sl-button variant="danger" outline @click="${this.disconnect}" ?disabled="${!this.isConnected}">
+                Disconnect
+              </sl-button>
+            </div>
+          </sl-card>
+
+          <sl-card>
+            <div slot="header"><strong>Sampler Controls</strong></div>
+
+            <div class="control-grid">
+              <sl-button @click="${() => this.sendValue(Write_UUID, 11)}">Fan On</sl-button>
+              <sl-button @click="${() => this.sendValue(Write_UUID, 10)}">Fan Off</sl-button>
+              <sl-button @click="${() => this.sendValue(Write_UUID, 21)}">Open Clamp</sl-button>
+              <sl-button @click="${() => this.sendValue(Write_UUID, 20)}">Close Clamp</sl-button>
+              <sl-button @click="${() => this.sendValue(Write_UUID, 31)}">Rotate</sl-button>
+              <sl-button @click="${() => this.sendValue(Write_UUID, 41)}">Read RFID</sl-button>
+            </div>
+
+            <hr style="margin: 20px 0; border: 0; border-top: 1px solid #eee;">
+
+            <div class="control-grid">
+              <sl-button variant="warning" @click="${() => this.sendValue(RESET_CHAR_UUID, 51)}">Reset System</sl-button>
+              <sl-button variant="neutral" @click="${() => this.sendValue(RESET_CHAR_UUID, 61)}">Test Run</sl-button>
+            </div>
+
+            <p style="margin-top: 15px;"><small>Last command sent: ${this.lastSent}</small></p>
+          </sl-card>
+
+          <div style="display: flex; gap: 10px;">
+            <sl-button href="${resolveRouterPath('about')}" variant="primary">
+              <sl-icon slot="prefix" name="info-circle"></sl-icon>
+              About Device
+            </sl-button>
+
+            ${'share' in navigator
+              ? html`
+                <sl-button @click="${this.share}">
+                  <sl-icon slot="prefix" name="share"></sl-icon>
+                  Share App
+                </sl-button>`
+              : null}
+          </div>
+
+        </div>
+      </main>
+    `;
+  }
+}
+
+
+
+async sendString(uuid: string, value: string) {
+    if (!this.bleService) return;
+    const char = await this.bleService.getCharacteristic(uuid);
+    await char.writeValue(new TextEncoder().encode(value));
+  }
+
+  async readString(uuid: string): Promise<string> {
+    if (!this.bleService) return "Error";
+    const char = await this.bleService.getCharacteristic(uuid);
+    const data = await char.readValue();
+    return new TextDecoder().decode(data);
+  }
