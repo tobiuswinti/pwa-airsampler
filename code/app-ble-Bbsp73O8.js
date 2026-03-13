@@ -1,4 +1,4 @@
-import{r as g,x as i,i as h,t as v}from"./property-QzOEr6Ld.js";import{r as u,a as r}from"./app-home-CaTpDGSD.js";var m=Object.defineProperty,f=Object.getOwnPropertyDescriptor,a=(e,t,s,c)=>{for(var o=c>1?void 0:c?f(t,s):t,l=e.length-1,d;l>=0;l--)(d=e[l])&&(o=(c?d(t,s,o):d(o))||o);return c&&o&&m(t,s,o),o};const x="AirSampler",b="32ff44d8-dbac-4fe6-bb74-ed682397c699",y="5ae0db2e-f1d4-4736-b435-2c3fe60bd846",w="863848ed-4743-45b5-b600-e69281cfe806",p="a1b2c3d4-e5f6-7890-abcd-ef1234567890";let n=class extends g{constructor(){super(...arguments),this.connectionStatus="disconnected",this.sensorValue="—",this.sensorTimestamp="",this.lastSent="—",this.lastReceivedTime="—",this.messages=[],this.bleAvailable=!0,this.clock="",this.bleDevice=null,this.bleServer=null,this.bleService=null,this.serialChar=null,this.stringChar=null,this.isManualDisconnect=!1,this.clockInterval=null}connectedCallback(){super.connectedCallback(),navigator.bluetooth||(this.bleAvailable=!1),this.clockInterval=window.setInterval(()=>{this.clock=new Date().toLocaleString()},1e3),this.clock=new Date().toLocaleString()}disconnectedCallback(){super.disconnectedCallback(),this.clockInterval&&clearInterval(this.clockInterval),this._disconnect()}async _connect(){if(navigator.bluetooth)try{this.isManualDisconnect=!1,this.connectionStatus="connecting",this.bleDevice||(this.bleDevice=await navigator.bluetooth.requestDevice({filters:[{name:x}],optionalServices:[b]}),this.bleDevice.addEventListener("gattserverdisconnected",()=>this._onDisconnected())),this.bleServer=await this.bleDevice.gatt.connect(),this.bleService=await this.bleServer.getPrimaryService(b),this.serialChar=await this.bleService.getCharacteristic(y),this.serialChar.addEventListener("characteristicvaluechanged",e=>{const t=e.target;this.sensorValue=new TextDecoder().decode(t.value),this.sensorTimestamp=new Date().toLocaleTimeString()}),await this.serialChar.startNotifications(),this.connectionStatus="connected";try{this.stringChar=await this.bleService.getCharacteristic(p),this.stringChar.addEventListener("characteristicvaluechanged",e=>{const t=e.target,s=new TextDecoder().decode(t.value);this._logMessage("received",s),this.lastReceivedTime=new Date().toLocaleString()}),await this.stringChar.startNotifications(),setTimeout(async()=>{try{await(await this.bleService.getCharacteristic(p)).writeValue(new TextEncoder().encode("TIME:"+Math.floor(Date.now()/1e3)))}catch{}},3e3)}catch{}}catch(e){console.error("Connection failed:",e),this.connectionStatus="failed"}}_disconnect(){this.isManualDisconnect=!0,this.bleDevice?.gatt?.connected&&this.bleDevice.gatt.disconnect(),this.connectionStatus="disconnected"}_onDisconnected(){this.isManualDisconnect||(this.connectionStatus="disconnected")}async _sendValue(e){if(this.bleService)try{await(await this.bleService.getCharacteristic(w)).writeValue(new Uint8Array([e])),this.lastSent=String(e)}catch(t){console.error(t)}}async _sendString(e){if(!(!this.bleService||!e))try{await(await this.bleService.getCharacteristic(p)).writeValue(new TextEncoder().encode(e)),this.lastSent=`"${e}"`,this._logMessage("sent",e)}catch(t){console.error(t)}}_sendCustomString(){const e=this.shadowRoot?.querySelector("#stringInput");e?.value&&(this._sendString(e.value),e.value="")}_logMessage(e,t){const s={time:new Date().toLocaleString(),direction:e,text:t};this.messages=[...this.messages,s]}_clearLog(){this.messages=[]}render(){const e=this.connectionStatus==="connected";return i`
+import{r as b,x as c,i as p,t as v}from"./property-QzOEr6Ld.js";import{r as h,a as r}from"./app-home-37ANSCbe.js";import{p as f,a as m,b as x,c as w,g as S,d as y,h as k}from"./log-store-BSOZGDb1.js";var L=Object.defineProperty,C=Object.getOwnPropertyDescriptor,i=(e,t,s,n)=>{for(var o=n>1?void 0:n?C(t,s):t,d=e.length-1,g;d>=0;d--)(g=e[d])&&(o=(n?g(t,s,o):g(o))||o);return n&&o&&L(t,s,o),o};const $="AirSampler",u="32ff44d8-dbac-4fe6-bb74-ed682397c699",T="5ae0db2e-f1d4-4736-b435-2c3fe60bd846",_="863848ed-4743-45b5-b600-e69281cfe806",l="a1b2c3d4-e5f6-7890-abcd-ef1234567890";let a=class extends b{constructor(){super(...arguments),this.connectionStatus="disconnected",this.sensorValue="—",this.sensorTimestamp="",this.lastSent="—",this.lastReceivedTime="—",this.messages=[],this.bleAvailable=!0,this.clock="",this.logTransferStatus="idle",this.logLinesReceived=0,this.bleDevice=null,this.bleServer=null,this.bleService=null,this.serialChar=null,this.stringChar=null,this.isManualDisconnect=!1,this.clockInterval=null,this.logBuffer=[],this.isReceivingLog=!1,this.aboutBuffer=[],this.isReceivingAbout=!1}connectedCallback(){super.connectedCallback(),navigator.bluetooth||(this.bleAvailable=!1),this.clockInterval=window.setInterval(()=>{this.clock=new Date().toLocaleString()},1e3),this.clock=new Date().toLocaleString()}disconnectedCallback(){super.disconnectedCallback(),this.clockInterval&&clearInterval(this.clockInterval),this._disconnect()}async _connect(){if(navigator.bluetooth)try{this.isManualDisconnect=!1,this.connectionStatus="connecting",this.bleDevice||(this.bleDevice=await navigator.bluetooth.requestDevice({filters:[{name:$}],optionalServices:[u]}),this.bleDevice.addEventListener("gattserverdisconnected",()=>this._onDisconnected())),this.bleServer=await this.bleDevice.gatt.connect(),this.bleService=await this.bleServer.getPrimaryService(u),this.serialChar=await this.bleService.getCharacteristic(T),this.serialChar.addEventListener("characteristicvaluechanged",e=>{const t=e.target;this.sensorValue=new TextDecoder().decode(t.value),this.sensorTimestamp=new Date().toLocaleTimeString()}),await this.serialChar.startNotifications(),this.connectionStatus="connected";try{this.stringChar=await this.bleService.getCharacteristic(l),this.stringChar.addEventListener("characteristicvaluechanged",e=>{const t=e.target,s=new TextDecoder().decode(t.value);if(s==="LOG_START"){this.isReceivingLog=!0,this.logBuffer=[],this.logLinesReceived=0,this.logTransferStatus="receiving";return}if(s==="LOG_END"){this.isReceivingLog=!1;const n=f(this.logBuffer);m(n,this.logBuffer),this.logTransferStatus="done";return}if(s==="LOG_ERROR"){this.isReceivingLog=!1,this.logTransferStatus="error";return}if(this.isReceivingLog){this.logBuffer.push(s),this.logLinesReceived=this.logBuffer.length;return}if(s==="ABOUT_START"){this.isReceivingAbout=!0,this.aboutBuffer=[];return}if(s==="ABOUT_END"){this.isReceivingAbout=!1;const n=x(this.aboutBuffer);w(n);return}if(this.isReceivingAbout){this.aboutBuffer.push(s);return}this._logMessage("received",s),this.lastReceivedTime=new Date().toLocaleString()}),await this.stringChar.startNotifications(),setTimeout(async()=>{try{const e=await this.bleService.getCharacteristic(l);await e.writeValue(new TextEncoder().encode("TIME:"+Math.floor(Date.now()/1e3))),await new Promise(n=>setTimeout(n,200));const t=S();t&&(await e.writeValue(new TextEncoder().encode("RFID:"+t)),await new Promise(n=>setTimeout(n,200)));const s=navigator.userAgent.includes("Android")?"Android Phone":navigator.userAgent.includes("iPhone")?"iPhone":navigator.userAgent.includes("Windows")?"Windows PC":"Unknown Device";await e.writeValue(new TextEncoder().encode("DEVICE:"+s)),await new Promise(n=>setTimeout(n,200)),"geolocation"in navigator&&navigator.geolocation.getCurrentPosition(async n=>{try{const o=`GPS:${n.coords.latitude.toFixed(6)},${n.coords.longitude.toFixed(6)}`;await(await this.bleService.getCharacteristic(l)).writeValue(new TextEncoder().encode(o))}catch{}},()=>{},{enableHighAccuracy:!0,timeout:1e4})}catch{}},3e3)}catch{}}catch(e){console.error("Connection failed:",e),this.connectionStatus="failed"}}_disconnect(){this.isManualDisconnect=!0,this.bleDevice?.gatt?.connected&&this.bleDevice.gatt.disconnect(),this.connectionStatus="disconnected"}_onDisconnected(){this.isManualDisconnect||(this.connectionStatus="disconnected")}async _sendValue(e){if(this.bleService)try{await(await this.bleService.getCharacteristic(_)).writeValue(new Uint8Array([e])),this.lastSent=String(e)}catch(t){console.error(t)}}async _sendString(e){if(!(!this.bleService||!e))try{await(await this.bleService.getCharacteristic(l)).writeValue(new TextEncoder().encode(e)),this.lastSent=`"${e}"`,this._logMessage("sent",e)}catch(t){console.error(t)}}_sendCustomString(){const e=this.shadowRoot?.querySelector("#stringInput");e?.value&&(this._sendString(e.value),e.value="")}async _requestLog(){if(this.bleService){this.logTransferStatus="requesting";try{await(await this.bleService.getCharacteristic(l)).writeValue(new TextEncoder().encode("SENDLOG"))}catch(e){console.error(e),this.logTransferStatus="error"}}}async _clearSDLog(){if(this.bleService)try{await(await this.bleService.getCharacteristic(l)).writeValue(new TextEncoder().encode("CLEARLOG")),this._logMessage("sent","CLEARLOG")}catch(e){console.error(e)}}_clearLocalLog(){y(),this.logTransferStatus="idle",this.logLinesReceived=0}_logMessage(e,t){const s={time:new Date().toLocaleString(),direction:e,text:t};this.messages=[...this.messages,s]}_clearLog(){this.messages=[]}render(){const e=this.connectionStatus==="connected";return c`
       <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Oxanium:wght@300;500;700&display=swap" rel="stylesheet" />
 
       <main>
@@ -12,7 +12,7 @@ import{r as g,x as i,i as h,t as v}from"./property-QzOEr6Ld.js";import{r as u,a 
 
         <div class="content">
 
-          ${this.bleAvailable?"":i`
+          ${this.bleAvailable?"":c`
             <div class="compat-box">
               Web Bluetooth is not available in this browser. Use Chrome on Android or enable the experimental flag on desktop Chrome.
             </div>
@@ -40,7 +40,7 @@ import{r as g,x as i,i as h,t as v}from"./property-QzOEr6Ld.js";import{r as u,a 
 
             <div class="sensor-row">
               <span class="sensor-value">${this.sensorValue}</span>
-              ${this.sensorTimestamp?i`<span class="sensor-time">@ ${this.sensorTimestamp}</span>`:""}
+              ${this.sensorTimestamp?c`<span class="sensor-time">@ ${this.sensorTimestamp}</span>`:""}
             </div>
           </div>
 
@@ -71,14 +71,42 @@ import{r as g,x as i,i as h,t as v}from"./property-QzOEr6Ld.js";import{r as u,a 
             </div>
           </div>
 
+          <!-- Request Log -->
+          <div class="card">
+            <div class="card-title">SD Card Log</div>
+            <div class="conn-row">
+              <button class="btn btn-connect"
+                ?disabled=${!e||this.logTransferStatus==="requesting"||this.logTransferStatus==="receiving"}
+                @click=${this._requestLog}>
+                ${this.logTransferStatus==="requesting"?"Requesting…":this.logTransferStatus==="receiving"?`Receiving… (${this.logLinesReceived} lines)`:"Request Log"}
+              </button>
+              <button class="btn btn-disconnect"
+                ?disabled=${!e}
+                @click=${this._clearSDLog}>
+                Clear SD Log
+              </button>
+              ${this.logTransferStatus==="error"?c`
+                <span class="status-text failed">Failed to read log</span>
+              `:""}
+            </div>
+            ${k()||this.logTransferStatus==="done"?c`
+              <div class="conn-row" style="margin-top:10px;">
+                <a class="btn btn-connect" href="${h("log")}" style="text-decoration:none;text-align:center;">
+                  View Log Data
+                </a>
+                <button class="btn-clear-log" @click=${this._clearLocalLog}>Clear Local Data</button>
+              </div>
+            `:""}
+          </div>
+
           <!-- Messages -->
           <div class="card">
             <div class="msg-header">
               <div class="card-title" style="margin-bottom:0">Messages</div>
-              ${this.messages.length>0?i`<button class="btn-clear-log" @click=${this._clearLog}>Clear</button>`:""}
+              ${this.messages.length>0?c`<button class="btn-clear-log" @click=${this._clearLog}>Clear</button>`:""}
             </div>
             <div class="msg-log">
-              ${this.messages.length===0?i`<p class="msg-entry" style="color:var(--muted);">No messages yet.</p>`:this.messages.map(t=>i`
+              ${this.messages.length===0?c`<p class="msg-entry" style="color:var(--muted);">No messages yet.</p>`:this.messages.map(t=>c`
                   <p class="msg-entry ${t.direction}">
                     [${t.time}] ${t.direction==="sent"?"→":"←"} ${t.text}
                   </p>
@@ -89,12 +117,12 @@ import{r as g,x as i,i as h,t as v}from"./property-QzOEr6Ld.js";import{r as u,a 
 
           <!-- Back to home -->
           <div>
-            <a class="nav-back" href="${u()}">← Back to Home</a>
+            <a class="nav-back" href="${h()}">← Back to Home</a>
           </div>
 
         </div>
       </main>
-    `}};n.styles=h`
+    `}};a.styles=p`
     :host {
       --bg:      #08090d;
       --surface: #0e1118;
@@ -451,5 +479,5 @@ import{r as g,x as i,i as h,t as v}from"./property-QzOEr6Ld.js";import{r as u,a 
       .ctrl-grid { grid-template-columns: 1fr; }
       .card { padding: 16px; }
     }
-  `;a([r()],n.prototype,"connectionStatus",2);a([r()],n.prototype,"sensorValue",2);a([r()],n.prototype,"sensorTimestamp",2);a([r()],n.prototype,"lastSent",2);a([r()],n.prototype,"lastReceivedTime",2);a([r()],n.prototype,"messages",2);a([r()],n.prototype,"bleAvailable",2);a([r()],n.prototype,"clock",2);n=a([v("app-ble")],n);export{n as AppBle};
-//# sourceMappingURL=app-ble-CPHnz8MD.js.map
+  `;i([r()],a.prototype,"connectionStatus",2);i([r()],a.prototype,"sensorValue",2);i([r()],a.prototype,"sensorTimestamp",2);i([r()],a.prototype,"lastSent",2);i([r()],a.prototype,"lastReceivedTime",2);i([r()],a.prototype,"messages",2);i([r()],a.prototype,"bleAvailable",2);i([r()],a.prototype,"clock",2);i([r()],a.prototype,"logTransferStatus",2);i([r()],a.prototype,"logLinesReceived",2);a=i([v("app-ble")],a);export{a as AppBle};
+//# sourceMappingURL=app-ble-Bbsp73O8.js.map
