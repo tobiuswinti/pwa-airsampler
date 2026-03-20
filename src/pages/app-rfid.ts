@@ -1,6 +1,7 @@
 import { LitElement, css, html } from 'lit';
 import { state, customElement } from 'lit/decorators.js';
 import { resolveRouterPath } from '../router';
+import { setLastRfidTag } from '../log-store';
 
 // ── Types ──────────────────────────────────────────────────────────────────
 interface DecodedRecord {
@@ -146,6 +147,9 @@ export class AppRfid extends LitElement {
       time:         new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
       records:      decoded,
     };
+
+    // Save last scanned tag for BLE metadata
+    if (serialNumber) setLastRfidTag(serialNumber);
 
     // Prepend — newest on top
     this.tags = [tag, ...this.tags];

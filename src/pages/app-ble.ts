@@ -1,6 +1,7 @@
 import { LitElement, css, html } from 'lit';
 import { state, customElement } from 'lit/decorators.js';
 import { resolveRouterPath } from '../router';
+import { setLogData, parseLogLines, hasLogData, clearLogData, setAboutData, parseAboutLines, getLastRfidTag } from '../log-store';
 
 // ── BLE Configuration ─────────────────────────────────────────────────────
 const DEVICE_NAME      = 'AirSampler';
@@ -31,6 +32,8 @@ export class AppBle extends LitElement {
   @state() private messages: LogEntry[] = [];
   @state() private bleAvailable = true;
   @state() private clock = '';
+  @state() private logTransferStatus: 'idle' | 'requesting' | 'receiving' | 'done' | 'error' = 'idle';
+  @state() private logLinesReceived = 0;
 
   private bleDevice:  BluetoothDevice | null = null;
   private bleServer:  BluetoothRemoteGATTServer | null = null;
@@ -39,6 +42,10 @@ export class AppBle extends LitElement {
   private stringChar: BluetoothRemoteGATTCharacteristic | null = null;
   private isManualDisconnect = false;
   private clockInterval: number | null = null;
+  private logBuffer: string[] = [];
+  private isReceivingLog = false;
+  private aboutBuffer: string[] = [];
+  private isReceivingAbout = false;
 
   /* ── Lifecycle ── */
   connectedCallback() {
@@ -94,17 +101,93 @@ export class AppBle extends LitElement {
         this.stringChar.addEventListener('characteristicvaluechanged', (e: Event) => {
           const target = e.target as BluetoothRemoteGATTCharacteristic;
           const val = new TextDecoder().decode(target.value!);
+
+          // Handle log file transfer markers
+          if (val === 'LOG_START') {
+            this.isReceivingLog = true;
+            this.logBuffer = [];
+            this.logLinesReceived = 0;
+            this.logTransferStatus = 'receiving';
+            return;
+          }
+          if (val === 'LOG_END') {
+            this.isReceivingLog = false;
+            const parsed = parseLogLines(this.logBuffer);
+            setLogData(parsed, this.logBuffer);
+            this.logTransferStatus = 'done';
+            return;
+          }
+          if (val === 'LOG_ERROR') {
+            this.isReceivingLog = false;
+            this.logTransferStatus = 'error';
+            return;
+          }
+          if (this.isReceivingLog) {
+            this.logBuffer.push(val);
+            this.logLinesReceived = this.logBuffer.length;
+            return;
+          }
+
+          // Handle about metadata transfer
+          if (val === 'ABOUT_START') {
+            this.isReceivingAbout = true;
+            this.aboutBuffer = [];
+            return;
+          }
+          if (val === 'ABOUT_END') {
+            this.isReceivingAbout = false;
+            const about = parseAboutLines(this.aboutBuffer);
+            setAboutData(about);
+            return;
+          }
+          if (this.isReceivingAbout) {
+            this.aboutBuffer.push(val);
+            return;
+          }
+
           this._logMessage('received', val);
           this.lastReceivedTime = new Date().toLocaleString();
         });
         await this.stringChar.startNotifications();
 
-        // Time sync after 3s
+        // After connect: sync time, then send metadata (GPS, RFID, device)
         setTimeout(async () => {
           try {
-            const timeChar = await this.bleService!.getCharacteristic(STRING_CHAR_UUID);
-            await timeChar.writeValue(new TextEncoder().encode('TIME:' + Math.floor(Date.now() / 1000)));
-          } catch { /* time sync is best-effort */ }
+            const ch = await this.bleService!.getCharacteristic(STRING_CHAR_UUID);
+            // Time sync
+            await ch.writeValue(new TextEncoder().encode('TIME:' + Math.floor(Date.now() / 1000)));
+            await new Promise(r => setTimeout(r, 200));
+
+            // Send last scanned RFID tag
+            const rfid = getLastRfidTag();
+            if (rfid) {
+              await ch.writeValue(new TextEncoder().encode('RFID:' + rfid));
+              await new Promise(r => setTimeout(r, 200));
+            }
+
+            // Send device name
+            const dev = navigator.userAgent.includes('Android') ? 'Android Phone'
+                      : navigator.userAgent.includes('iPhone')  ? 'iPhone'
+                      : navigator.userAgent.includes('Windows') ? 'Windows PC'
+                      : 'Unknown Device';
+            await ch.writeValue(new TextEncoder().encode('DEVICE:' + dev));
+            await new Promise(r => setTimeout(r, 200));
+
+            // Send GPS coordinates from phone
+            if ('geolocation' in navigator) {
+              navigator.geolocation.getCurrentPosition(
+                async (pos) => {
+                  try {
+                    const gpsStr = `GPS:${pos.coords.latitude.toFixed(6)},${pos.coords.longitude.toFixed(6)}`;
+                    const gch = await this.bleService!.getCharacteristic(STRING_CHAR_UUID);
+                    await gch.writeValue(new TextEncoder().encode(gpsStr));
+                  } catch { /* GPS send is best-effort */ }
+                },
+                () => { /* GPS not available */ },
+                { enableHighAccuracy: true, timeout: 10000 }
+              );
+            }
+          } catch { /* metadata sync is best-effort */ }
         }, 3000);
       } catch {
         // string characteristic not available
@@ -159,6 +242,36 @@ export class AppBle extends LitElement {
     if (!input?.value) return;
     this._sendString(input.value);
     input.value = '';
+  }
+
+  /* ── Request Log ── */
+  private async _requestLog() {
+    if (!this.bleService) return;
+    this.logTransferStatus = 'requesting';
+    try {
+      const char = await this.bleService.getCharacteristic(STRING_CHAR_UUID);
+      await char.writeValue(new TextEncoder().encode('SENDLOG'));
+    } catch (e) {
+      console.error(e);
+      this.logTransferStatus = 'error';
+    }
+  }
+
+  private async _clearSDLog() {
+    if (!this.bleService) return;
+    try {
+      const char = await this.bleService.getCharacteristic(STRING_CHAR_UUID);
+      await char.writeValue(new TextEncoder().encode('CLEARLOG'));
+      this._logMessage('sent', 'CLEARLOG');
+    } catch (e) {
+      console.error(e);
+    }
+  }
+
+  private _clearLocalLog() {
+    clearLogData();
+    this.logTransferStatus = 'idle';
+    this.logLinesReceived = 0;
   }
 
   /* ── Log ── */
@@ -613,6 +726,36 @@ export class AppBle extends LitElement {
                 @keyup=${(e: KeyboardEvent) => { if (e.key === 'Enter') this._sendCustomString(); }} />
               <button class="btn btn-send" ?disabled=${!isConnected} @click=${this._sendCustomString}>Send</button>
             </div>
+          </div>
+
+          <!-- Request Log -->
+          <div class="card">
+            <div class="card-title">SD Card Log</div>
+            <div class="conn-row">
+              <button class="btn btn-connect"
+                ?disabled=${!isConnected || this.logTransferStatus === 'requesting' || this.logTransferStatus === 'receiving'}
+                @click=${this._requestLog}>
+                ${this.logTransferStatus === 'requesting' ? 'Requesting…'
+                : this.logTransferStatus === 'receiving' ? `Receiving… (${this.logLinesReceived} lines)`
+                : 'Request Log'}
+              </button>
+              <button class="btn btn-disconnect"
+                ?disabled=${!isConnected}
+                @click=${this._clearSDLog}>
+                Clear SD Log
+              </button>
+              ${this.logTransferStatus === 'error' ? html`
+                <span class="status-text failed">Failed to read log</span>
+              ` : ''}
+            </div>
+            ${hasLogData() || this.logTransferStatus === 'done' ? html`
+              <div class="conn-row" style="margin-top:10px;">
+                <a class="btn btn-connect" href="${resolveRouterPath('log')}" style="text-decoration:none;text-align:center;">
+                  View Log Data
+                </a>
+                <button class="btn-clear-log" @click=${this._clearLocalLog}>Clear Local Data</button>
+              </div>
+            ` : ''}
           </div>
 
           <!-- Messages -->

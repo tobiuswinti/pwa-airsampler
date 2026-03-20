@@ -44,6 +44,22 @@ export const router = new Router({
         lazy(() => import('./pages/app-ble.js')),
       ],
       render: () => html`<app-ble></app-ble>`
+    },
+    {
+      path: resolveRouterPath('log'),
+      title: 'Log Viewer',
+      plugins: [
+        lazy(() => import('./pages/app-log.js')),
+      ],
+      render: () => html`<app-log></app-log>`
+    },
+    {
+      path: resolveRouterPath('device'),
+      title: 'Device',
+      plugins: [
+        lazy(() => import('./pages/app-device.js')),
+      ],
+      render: () => html`<app-device></app-device>`
     }
   ]
 });
