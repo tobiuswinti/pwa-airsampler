@@ -1,33 +1,42 @@
+/* Self-hosted fonts — bundled and precached, works offline from first load */
+@import '@fontsource/share-tech-mono/400.css';
+@import '@fontsource/oxanium/300.css';
+@import '@fontsource/oxanium/500.css';
+@import '@fontsource/oxanium/700.css';
 
 /*
-  This file is used for all of your global styles and CSS variables.
-  Check here https://developer.mozilla.org/en-US/docs/Web/CSS/Using_CSS_custom_properties for more info on using CSS variables.
+  Global styles and CSS variables.
 */
 :root {
   --font-family: sans-serif;
+  /* Safe area insets for notched / punched-hole phones */
+  --sat: env(safe-area-inset-top,    0px);
+  --sar: env(safe-area-inset-right,  0px);
+  --sab: env(safe-area-inset-bottom, 0px);
+  --sal: env(safe-area-inset-left,   0px);
 }
 
 html, body {
   font-family: var(--font-family);
   padding: 0;
   margin: 0;
-
   height: 100%;
+  /* Respect device safe areas (notch, home indicator) */
+  padding-top:    var(--sat);
+  padding-right:  var(--sar);
+  padding-bottom: var(--sab);
+  padding-left:   var(--sal);
 }
 
 @media (prefers-color-scheme: dark) {
-
-  html,
-  body {
-    background-color: #181818;
+  html, body {
+    background-color: #08090d;
     color: white;
   }
 }
 
 @media (prefers-color-scheme: light) {
-
-  html,
-  body {
+  html, body {
     background-color: #f5f5f5;
     color: black;
   }

@@ -1,76 +1,82 @@
-// docs for router https://github.com/thepassle/app-tools/blob/master/router/README.md
-import { html } from 'lit';
-
-if (!(globalThis as any).URLPattern) {
-  await import("urlpattern-polyfill");
-}
-
-import { Router } from '@thepassle/app-tools/router.js';
-import { lazy } from '@thepassle/app-tools/router/plugins/lazy.js';
-// @ts-ignore
-import { title } from '@thepassle/app-tools/router/plugins/title.js';
+import { html, TemplateResult } from 'lit';
 
 import './pages/app-home.js';
 
-const baseURL: string = (import.meta as any).env.BASE_URL;
+// ── Route definition ─────────────────────────────────────────────────────────
+interface Route {
+  hash: string;
+  title: string;
+  render: () => TemplateResult;
+  load?: () => Promise<unknown>;
+}
 
-export const router = new Router({
-  routes: [
-    {
-      path: resolveRouterPath(),
-      title: 'Home',
-      render: () => html`<app-home></app-home>`
-    },
-    {
-      path: resolveRouterPath('about'),
-      title: 'About',
-      plugins: [
-        lazy(() => import('./pages/app-about/app-about.js')),
-      ],
-      render: () => html`<app-about></app-about>`
-    },
-    {
-      path: resolveRouterPath('rfid'),
-      title: 'RFID Scanner',
-      plugins: [
-        lazy(() => import('./pages/app-rfid.js')),
-      ],
-      render: () => html`<app-rfid></app-rfid>`
-    },
-    {
-      path: resolveRouterPath('ble'),
-      title: 'BLE Control',
-      plugins: [
-        lazy(() => import('./pages/app-ble.js')),
-      ],
-      render: () => html`<app-ble></app-ble>`
-    },
-    {
-      path: resolveRouterPath('log'),
-      title: 'Log Viewer',
-      plugins: [
-        lazy(() => import('./pages/app-log.js')),
-      ],
-      render: () => html`<app-log></app-log>`
-    },
-    {
-      path: resolveRouterPath('device'),
-      title: 'Device',
-      plugins: [
-        lazy(() => import('./pages/app-device.js')),
-      ],
-      render: () => html`<app-device></app-device>`
-    }
-  ]
-});
+const routes: Route[] = [
+  {
+    hash: '',
+    title: 'AirSampler — Home',
+    render: () => html`<app-home></app-home>`,
+  },
+  {
+    hash: '#about',
+    title: 'AirSampler — About',
+    render: () => html`<app-about></app-about>`,
+    load: () => import('./pages/app-about/app-about.js'),
+  },
+  {
+    hash: '#rfid',
+    title: 'AirSampler — RFID Scanner',
+    render: () => html`<app-rfid></app-rfid>`,
+    load: () => import('./pages/app-rfid.js'),
+  },
+  {
+    hash: '#ble',
+    title: 'AirSampler — BLE Control',
+    render: () => html`<app-ble></app-ble>`,
+    load: () => import('./pages/app-ble.js'),
+  },
+  {
+    hash: '#log',
+    title: 'AirSampler — Log Viewer',
+    render: () => html`<app-log></app-log>`,
+    load: () => import('./pages/app-log.js'),
+  },
+  {
+    hash: '#device',
+    title: 'AirSampler — Device',
+    render: () => html`<app-device></app-device>`,
+    load: () => import('./pages/app-device.js'),
+  },
+];
 
-// This function will resolve a path with whatever Base URL was passed to the vite build process.
-// Use of this function throughout the starter is not required, but highly recommended, especially if you plan to use GitHub Pages to deploy.
-// If no arg is passed to this function, it will return the base URL.
-export function resolveRouterPath(unresolvedPath?: string) {
-  var resolvedPath = baseURL;
-  if (unresolvedPath) {
-    resolvedPath = resolvedPath + unresolvedPath;
+// ── Hash Router ───────────────────────────────────────────────────────────────
+class HashRouter extends EventTarget {
+  private _current: Route = routes[0];
+
+  constructor() {
+    super();
+    window.addEventListener('hashchange', () => this._navigate());
+    Promise.resolve().then(() => this._navigate());
   }
-  return resolvedPath;
+
+  private async _navigate() {
+    const hash = window.location.hash;
+    const route = routes.find((r) => r.hash === hash) ?? routes[0];
+    if (route.load) await route.load();
+    this._current = route;
+    document.title = route.title;
+    this.dispatchEvent(new CustomEvent('route-changed'));
+  }
+
+  render(): TemplateResult {
+    return this._current.render();
+  }
+}
+
+export const router = new HashRouter();
+
+// ── resolveRouterPath ─────────────────────────────────────────────────────────
+// resolveRouterPath()        → '#'      (home)
+// resolveRouterPath('ble')   → '#ble'
+export function resolveRouterPath(page?: string): string {
+  return page ? `#${page}` : '#';
 }

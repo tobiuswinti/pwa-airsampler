@@ -3,7 +3,7 @@ import { state, customElement } from 'lit/decorators.js';
 import { resolveRouterPath } from '../router';
 import {
   setLogData, parseLogLines, hasLogData, clearLogData,
-  setAboutData, parseAboutLines, getLastRfidTag, setLastRfidTag,
+  setAboutData, parseAboutLines, setLastRfidTag,
 } from '../log-store';
 
 // ── BLE Configuration ─────────────────────────────────────────────────────
@@ -290,10 +290,6 @@ export class AppDevice extends LitElement {
     } catch {
       this.logTransferStatus = 'error';
     }
-  }
-
-  private async _clearSDLog() {
-    try { await this._sendString('CLEARLOG'); } catch { /* ignore */ }
   }
 
   private _clearLocalLog() {
@@ -1180,7 +1176,6 @@ export class AppDevice extends LitElement {
     const isScanning = this.sampleScanStatus === 'scanning';
     const detected   = this.sampleScanStatus === 'detected';
     const scanErr    = this.sampleScanStatus === 'error' || this.sampleScanStatus === 'no_nfc';
-    const gpsReady   = this.sampleGpsStatus === 'got' || this.sampleGpsStatus === 'unavailable';
     const canSend    = detected && this.connectionStatus === 'connected';
 
     return html`
@@ -1270,8 +1265,6 @@ export class AppDevice extends LitElement {
     const isRunning   = this.samplingState === 'running';
 
     return html`
-      <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Oxanium:wght@300;500;700&display=swap" rel="stylesheet" />
-
       <main>
         <!-- ── Page header ── -->
         <div class="page-header">

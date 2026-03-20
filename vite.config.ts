@@ -1,32 +1,29 @@
 import { defineConfig } from 'vite';
 import { VitePWA } from 'vite-plugin-pwa';
 
-// https://vitejs.dev/config/
 export default defineConfig({
-  base: "/pwa-airsampler/",
+  base: '/pwa-airsampler/',
   build: {
     sourcemap: true,
-    assetsDir: "code",
-    target: ["esnext"],
+    assetsDir: 'code',
+    target: ['esnext'],
     cssMinify: true,
-    lib: false
   },
   plugins: [
     VitePWA({
-      strategies: "injectManifest",
-      injectManifest: {
-        swSrc: 'public/sw.js',
-        swDest: 'dist/sw.js',
-        globDirectory: 'dist',
-        globPatterns: [
-          '**/*.{html,js,css,json,png}',
-        ],
+      strategies: 'generateSW',
+      registerType: 'autoUpdate',
+      injectRegister: 'auto',
+      manifest: false, // manifest.json in /public is used as-is
+      workbox: {
+        globPatterns: ['**/*.{html,js,css,json,png,svg,ico,woff2,woff,ttf}'],
+        navigateFallback: '/pwa-airsampler/index.html',
+        runtimeCaching: [],
       },
-      injectRegister: false,
-      manifest: false,
       devOptions: {
-        enabled: true
-      }
-    })
-  ]
-})
+        enabled: true,
+        type: 'module',
+      },
+    }),
+  ],
+});

@@ -653,8 +653,6 @@ export class AppBle extends LitElement {
     const isConnected = this.connectionStatus === 'connected';
 
     return html`
-      <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Oxanium:wght@300;500;700&display=swap" rel="stylesheet" />
-
       <main>
         <div class="page-header">
           <div class="logo-icon">

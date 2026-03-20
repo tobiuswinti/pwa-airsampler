@@ -533,7 +533,6 @@ export class AppLog extends LitElement {
   render() {
     if (this.data.length === 0) {
       return html`
-        <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Oxanium:wght@300;500;700&display=swap" rel="stylesheet" />
         <main>
           <div class="page-header">
             <div class="logo-icon">
@@ -557,8 +556,6 @@ export class AppLog extends LitElement {
     const headers = this.valueHeaders;
 
     return html`
-      <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Oxanium:wght@300;500;700&display=swap" rel="stylesheet" />
-
       <main>
         <div class="page-header">
           <div class="logo-icon">

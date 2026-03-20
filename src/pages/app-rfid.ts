@@ -586,8 +586,6 @@ export class AppRfid extends LitElement {
     const isScanning = this.scanStatus === 'scanning' || this.scanStatus === 'detected';
 
     return html`
-      <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Oxanium:wght@300;500;700&display=swap" rel="stylesheet" />
-
       <main>
         <!-- Page header -->
         <div class="page-header">

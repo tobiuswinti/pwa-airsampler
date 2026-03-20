@@ -2,12 +2,10 @@ import { LitElement, css, html } from 'lit';
 import { property, customElement } from 'lit/decorators.js';
 import { resolveRouterPath } from '../router';
 
-import '@shoelace-style/shoelace/dist/components/button/button.js';
 @customElement('app-header')
 export class AppHeader extends LitElement {
-  @property({ type: String }) title = 'PWA Starter';
-
-  @property({ type: Boolean}) enableBack: boolean = false;
+  @property({ type: String }) title = 'AirSampler';
+  @property({ type: Boolean }) enableBack: boolean = false;
 
   static styles = css`
     header {
@@ -34,37 +32,38 @@ export class AppHeader extends LitElement {
       font-weight: bold;
     }
 
-    nav a {
-      margin-left: 10px;
-    }
-
     #back-button-block {
       display: flex;
-      justify-content: space-between;
       align-items: center;
       gap: 8px;
     }
 
-    @media(prefers-color-scheme: light) {
-      header {
-        color: black;
-      }
+    .back-btn {
+      display: inline-block;
+      font-size: 0.75rem;
+      font-weight: 600;
+      padding: 4px 12px;
+      border: 1px solid rgba(255, 255, 255, 0.6);
+      border-radius: 6px;
+      color: white;
+      text-decoration: none;
+      cursor: pointer;
+      transition: opacity 0.2s;
+      -webkit-app-region: no-drag;
+    }
 
-      nav a {
-        color: initial;
-      }
+    .back-btn:hover {
+      opacity: 0.75;
     }
   `;
 
   render() {
     return html`
       <header>
-
         <div id="back-button-block">
-          ${this.enableBack ? html`<sl-button size="small" href="${resolveRouterPath()}">
-            Back
-          </sl-button>` : null}
-
+          ${this.enableBack
+            ? html`<a class="back-btn" href="${resolveRouterPath()}">← Back</a>`
+            : null}
           <h1>${this.title}</h1>
         </div>
       </header>
