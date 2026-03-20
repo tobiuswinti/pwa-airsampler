@@ -2,6 +2,7 @@ import { LitElement, css, html } from 'lit';
 import { state, customElement } from 'lit/decorators.js';
 import { resolveRouterPath } from '../router';
 import { getLogData, getRawLines, onLogDataChanged, LogDataRow, getAboutData, AboutData } from '../log-store';
+import { uploadLog } from '../history-store';
 
 // ── Chart colors per source ───────────────────────────────────────────────
 const SOURCE_COLORS: Record<string, string> = {
@@ -23,6 +24,8 @@ export class AppLog extends LitElement {
   @state() private about: AboutData | null = null;
   @state() private activeSource = 'all';
   @state() private activeChart = 0; // which value column to chart
+  @state() private uploadStatus: 'idle' | 'uploading' | 'done' | 'error' = 'idle';
+  @state() private uploadMsg = '';
 
   private _unsub?: () => void;
 
@@ -184,6 +187,20 @@ export class AppLog extends LitElement {
     ctx.font = '10px monospace';
     ctx.textAlign = 'center';
     ctx.fillText('Sample index →', W / 2, H - 5);
+  }
+
+  /* ── Upload to Cloud ── */
+  private async _uploadToCloud() {
+    this.uploadStatus = 'uploading';
+    this.uploadMsg = '';
+    try {
+      await uploadLog(this.rawLines, this.about);
+      this.uploadStatus = 'done';
+      this.uploadMsg = 'Uploaded successfully';
+    } catch (e: unknown) {
+      this.uploadStatus = 'error';
+      this.uploadMsg = e instanceof Error ? e.message : 'Upload failed';
+    }
   }
 
   /* ── Download CSV ── */
@@ -457,6 +474,27 @@ export class AppLog extends LitElement {
       color: var(--bg);
     }
 
+    .btn-upload {
+      background: var(--warn);
+      color: var(--bg);
+    }
+
+    .btn-upload:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+      transform: none;
+    }
+
+    .upload-status {
+      font-family: var(--mono);
+      font-size: 0.7rem;
+      letter-spacing: 0.06em;
+      padding: 4px 0;
+    }
+
+    .upload-status.done { color: var(--ok); }
+    .upload-status.error { color: var(--warn); }
+
     .nav-back {
       font-family: var(--mono);
       font-size: 0.72rem;
@@ -669,7 +707,15 @@ export class AppLog extends LitElement {
           <!-- Actions -->
           <div class="actions">
             <button class="btn btn-download" @click=${this._downloadCSV}>Download CSV</button>
+            <button class="btn btn-upload"
+              ?disabled=${this.uploadStatus === 'uploading'}
+              @click=${this._uploadToCloud}>
+              ${this.uploadStatus === 'uploading' ? 'Uploading...' : 'Upload to Cloud'}
+            </button>
           </div>
+          ${this.uploadMsg ? html`
+            <div class="upload-status ${this.uploadStatus}">${this.uploadMsg}</div>
+          ` : ''}
 
           <div style="display:flex;gap:10px;">
             <a class="nav-back" href="${resolveRouterPath('ble')}">← BLE Control</a>

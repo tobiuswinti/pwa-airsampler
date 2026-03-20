@@ -46,6 +46,12 @@ const routes: Route[] = [
     render: () => html`<app-device></app-device>`,
     load: () => import('./pages/app-device.js'),
   },
+  {
+    hash: '#history',
+    title: 'AirSampler — History',
+    render: () => html`<app-history></app-history>`,
+    load: () => import('./pages/app-history.js'),
+  },
 ];
 
 // ── Hash Router ───────────────────────────────────────────────────────────────

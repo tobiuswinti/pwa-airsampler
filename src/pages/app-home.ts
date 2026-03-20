@@ -264,6 +264,18 @@ export class AppHome extends LitElement {
               <span class="nav-arrow">›</span>
             </a>
 
+            <!-- History -->
+            <a class="nav-card" href="${resolveRouterPath('history')}">
+              <div class="nav-icon" style="background:rgba(255,107,53,0.08);border:1px solid rgba(255,107,53,0.25);">
+                <svg viewBox="0 0 24 24" style="fill:var(--warn);"><path d="M13 3c-4.97 0-9 4.03-9 9H1l3.89 3.89.07.14L9 12H6c0-3.87 3.13-7 7-7s7 3.13 7 7-3.13 7-7 7c-1.93 0-3.68-.79-4.94-2.06l-1.42 1.42A8.954 8.954 0 0013 21c4.97 0 9-4.03 9-9s-4.03-9-9-9zm-1 5v5l4.28 2.54.72-1.21-3.5-2.08V8H12z"/></svg>
+              </div>
+              <div class="nav-text">
+                <span class="nav-label">History</span>
+                <span class="nav-desc">Browse & view uploaded log files</span>
+              </div>
+              <span class="nav-arrow">›</span>
+            </a>
+
             <!-- Device -->
             <a class="nav-card" href="${resolveRouterPath('device')}">
               <div class="nav-icon" style="background:rgba(0,255,163,0.08);border:1px solid rgba(0,255,163,0.25);">

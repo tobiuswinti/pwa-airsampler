@@ -15,6 +15,7 @@
   "dependencies": {
     "@fontsource/oxanium": "^5.2.8",
     "@fontsource/share-tech-mono": "^5.2.7",
+    "firebase": "^12.11.0",
     "lit": "^3.2.1"
   },
   "devDependencies": {
