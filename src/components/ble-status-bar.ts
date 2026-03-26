@@ -8,24 +8,19 @@ export class BleStatusBar extends LitElement {
 
   @state() private connStatus: ConnStatus = bleService.connStatus;
   @state() private liveState: LiveState | null = bleService.liveState;
-  @state() private unsyncedCount: number = bleService.unsyncedCount;
-
-  private _onStatus    = () => { this.connStatus    = bleService.connStatus; };
-  private _onState     = () => { this.liveState     = bleService.liveState; };
-  private _onSyncCheck = () => { this.unsyncedCount = bleService.unsyncedCount; };
+  private _onStatus = () => { this.connStatus = bleService.connStatus; };
+  private _onState  = () => { this.liveState  = bleService.liveState; };
 
   connectedCallback() {
     super.connectedCallback();
-    bleService.addEventListener('status-changed',    this._onStatus);
-    bleService.addEventListener('state-changed',     this._onState);
-    bleService.addEventListener('sync-check-changed', this._onSyncCheck);
+    bleService.addEventListener('status-changed', this._onStatus);
+    bleService.addEventListener('state-changed',  this._onState);
   }
 
   disconnectedCallback() {
     super.disconnectedCallback();
-    bleService.removeEventListener('status-changed',    this._onStatus);
-    bleService.removeEventListener('state-changed',     this._onState);
-    bleService.removeEventListener('sync-check-changed', this._onSyncCheck);
+    bleService.removeEventListener('status-changed', this._onStatus);
+    bleService.removeEventListener('state-changed',  this._onState);
   }
 
   static styles = css`
@@ -153,34 +148,6 @@ export class BleStatusBar extends LitElement {
     }
 
     .btn-disconnect:hover { border-color: #ef4444; color: #f87171; }
-
-    .btn-sync-badge {
-      font-family: var(--sans);
-      font-size: 0.75rem;
-      font-weight: 500;
-      padding: 5px 12px;
-      border-radius: 5px;
-      cursor: pointer;
-      transition: opacity 0.15s;
-      flex-shrink: 0;
-      white-space: nowrap;
-      background: transparent;
-      border: 1px solid rgba(245,158,11,0.4);
-      color: #f59e0b;
-      text-decoration: none;
-      display: inline-flex;
-      align-items: center;
-      gap: 5px;
-    }
-
-    .btn-sync-badge:hover { background: rgba(245,158,11,0.08); border-color: rgba(245,158,11,0.7); }
-
-    .sync-dot {
-      width: 6px; height: 6px;
-      border-radius: 50%;
-      background: #f59e0b;
-      flex-shrink: 0;
-    }
 
     .battery {
       display: flex;

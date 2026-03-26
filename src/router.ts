@@ -90,6 +90,13 @@ const routes: Route[] = [
     render: () => html`<app-sample></app-sample>`,
     load: () => import('./pages/app-sample.js'),
   },
+  {
+    hash: '#cloud-run/',
+    prefix: true,
+    title: 'AirSampler — Cloud Run',
+    render: () => html`<app-cloud-run></app-cloud-run>`,
+    load: () => import('./pages/app-cloud-run.js'),
+  },
 ];
 
 // ── Hash Router ───────────────────────────────────────────────────────────────

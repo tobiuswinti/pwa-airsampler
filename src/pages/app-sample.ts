@@ -1,8 +1,7 @@
 import { LitElement, css, html } from 'lit';
 import { state, customElement } from 'lit/decorators.js';
-import { collection, query, where, getDocs, Timestamp } from 'firebase/firestore';
+import { collection, query, where, getDocs, deleteDoc, doc, Timestamp, orderBy } from 'firebase/firestore';
 import { db } from '../firebase';
-import { getDeviceRuns, DeviceRun } from '../device-log-store';
 
 // Minimal Web NFC type stubs
 declare class NDEFReader extends EventTarget {
@@ -26,22 +25,68 @@ const COLLECTION = 'device_runs';
 @customElement('app-sample')
 export class AppSample extends LitElement {
 
-  @state() private nfcAvail   = 'NDEFReader' in window;
-  @state() private scanning   = false;
-  @state() private searching  = false;
-  @state() private searched   = false;
-  @state() private tagId      = '';
-  @state() private errorMsg   = '';
-  @state() private localResults:  DeviceRun[]  = [];
-  @state() private cloudResults:  CloudDoc[]   = [];
+  @state() private nfcAvail     = 'NDEFReader' in window;
+  @state() private scanning     = false;
+  @state() private searching    = false;
+  @state() private searched     = false;
+  @state() private tagId        = '';
+  @state() private errorMsg     = '';
+  @state() private cloudResults: CloudDoc[] = [];
+  @state() private allDocs:      CloudDoc[] = [];
+  @state() private loadingAll   = true;
+  @state() private loadError    = '';
 
   private _nfcAbort: AbortController | null = null;
   private _searchAbort: AbortController | null = null;
+
+  connectedCallback() {
+    super.connectedCallback();
+    this._loadAll();
+  }
 
   disconnectedCallback() {
     super.disconnectedCallback();
     this._nfcAbort?.abort();
     this._searchAbort?.abort();
+  }
+
+  private async _loadAll() {
+    this.loadingAll = true;
+    this.loadError  = '';
+    try {
+      const q    = query(collection(db, COLLECTION), orderBy('startTime', 'desc'));
+      const snap = await getDocs(q);
+      this.allDocs = snap.docs.map(d => this._docToCloudDoc(d.id, d.data()));
+    } catch (err: any) {
+      this.loadError = err?.message ?? 'Failed to load cloud runs';
+    } finally {
+      this.loadingAll = false;
+    }
+  }
+
+  private _docToCloudDoc(id: string, d: Record<string, any>): CloudDoc {
+    const uploadedAt = d['uploadedAt'] instanceof Timestamp
+      ? d['uploadedAt'].toMillis()
+      : Number(d['uploadedAt'] ?? 0);
+    return {
+      firebaseDocId: id,
+      tagId:         d['tagId']        ?? '',
+      startTime:     Number(d['startTime']    ?? 0),
+      downloadedAt:  Number(d['downloadedAt'] ?? 0),
+      uploadedAt,
+      fields:        d['fields']       ?? [],
+      meta:          d['meta']         ?? {},
+    };
+  }
+
+  private async _delete(docId: string) {
+    try {
+      await deleteDoc(doc(db, COLLECTION, docId));
+      this.allDocs     = this.allDocs.filter(d => d.firebaseDocId !== docId);
+      this.cloudResults = this.cloudResults.filter(d => d.firebaseDocId !== docId);
+    } catch (err: any) {
+      console.warn('[sample] delete failed:', err);
+    }
   }
 
   private async _startScan() {
@@ -77,9 +122,8 @@ export class AppSample extends LitElement {
     this.tagId = val;
     this._searchAbort?.abort();
     if (!val.trim()) {
-      this.searched      = false;
-      this.localResults  = [];
-      this.cloudResults  = [];
+      this.searched     = false;
+      this.cloudResults = [];
       return;
     }
     // Debounce slightly so we don't fire on every keystroke
@@ -89,46 +133,16 @@ export class AppSample extends LitElement {
   }
 
   private async _search(raw: string) {
-    const normalized = raw.trim().toUpperCase();
-    this.tagId       = raw;
-    this.searching   = true;
-    this.searched    = false;
-    this.localResults  = [];
-    this.cloudResults  = [];
+    this.tagId      = raw;
+    this.searching  = true;
+    this.searched   = false;
+    this.cloudResults = [];
 
-    // ── Local lookup ──────────────────────────────────────────────────────────
-    const local = getDeviceRuns().filter(
-      r => r.meta.tagId?.trim().toUpperCase() === normalized
-    );
-    const localIds = new Set(local.map(r => r.id));
-    this.localResults = local;
-
-    // ── Firebase lookup ───────────────────────────────────────────────────────
     try {
-      const q   = query(collection(db, COLLECTION), where('tagId', '==', raw.trim()));
+      const q    = query(collection(db, COLLECTION), where('tagId', '==', raw.trim()));
       const snap = await getDocs(q);
-      const cloud: CloudDoc[] = [];
-      snap.forEach(doc => {
-        const d = doc.data();
-        const devRunId: number = d['deviceRunId'];
-        // Skip if already in local store
-        if (localIds.has(devRunId)) return;
-        const uploadedAt = d['uploadedAt'] instanceof Timestamp
-          ? d['uploadedAt'].toMillis()
-          : Number(d['uploadedAt'] ?? 0);
-        cloud.push({
-          firebaseDocId: doc.id,
-          tagId:         d['tagId']        ?? '',
-          startTime:     Number(d['startTime']    ?? 0),
-          downloadedAt:  Number(d['downloadedAt'] ?? 0),
-          uploadedAt,
-          fields:        d['fields']       ?? [],
-          meta:          d['meta']         ?? {},
-        });
-      });
-      this.cloudResults = cloud;
+      this.cloudResults = snap.docs.map(d => this._docToCloudDoc(d.id, d.data()));
     } catch (err) {
-      // Cloud query failed (e.g. offline) — still show local results
       console.warn('[sample] cloud query failed:', err);
     }
 
@@ -326,80 +340,84 @@ export class AppSample extends LitElement {
       line-height: 1.6;
     }
 
-    /* Result card */
-    .result-card {
-      background: var(--card);
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      overflow: hidden;
-    }
-
-    .result-card.local { border-color: rgba(34,197,94,0.25); }
-    .result-card.cloud { border-color: rgba(59,130,246,0.25); }
-
-    .result-header {
-      padding: 12px 16px;
+    /* Compact cloud run row */
+    .run-row {
       display: flex;
       align-items: center;
       gap: 10px;
+      padding: 11px 0;
       border-bottom: 1px solid var(--border);
     }
 
-    .result-dot {
-      width: 7px; height: 7px;
-      border-radius: 50%;
-      flex-shrink: 0;
-    }
+    .run-row:last-child { border-bottom: none; }
 
-    .result-dot.local { background: #22c55e; }
-    .result-dot.cloud { background: #3b82f6; }
-
-    .result-title { font-size: 0.875rem; font-weight: 600; }
-
-    .result-badge {
-      margin-left: auto;
-      font-size: 0.6875rem;
-      font-weight: 500;
-      padding: 2px 7px;
-      border-radius: 8px;
-      flex-shrink: 0;
-    }
-
-    .result-badge.local { background: rgba(34,197,94,0.08); color: #22c55e; border: 1px solid rgba(34,197,94,0.2); }
-    .result-badge.cloud { background: rgba(59,130,246,0.08); color: #60a5fa; border: 1px solid rgba(59,130,246,0.2); }
-
-    .result-body {
-      padding: 12px 16px;
+    .run-row-info {
+      flex: 1;
+      min-width: 0;
       display: flex;
       flex-direction: column;
-      gap: 7px;
+      gap: 2px;
     }
 
-    .info-row { display: flex; justify-content: space-between; gap: 8px; }
-    .info-key { font-size: 0.8125rem; color: var(--muted-fg); }
-    .info-val { font-size: 0.8125rem; color: var(--fg); text-align: right; font-family: var(--mono); }
-
-    .result-actions {
-      padding: 11px 16px;
-      border-top: 1px solid var(--border);
-    }
-
-    .btn-view {
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      font-family: var(--sans);
+    .run-row-name {
       font-size: 0.875rem;
       font-weight: 500;
-      padding: 8px 20px;
-      border-radius: 6px;
-      background: var(--fg);
-      color: #09090b;
-      text-decoration: none;
-      transition: opacity 0.15s;
+      color: var(--fg);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
     }
 
-    .btn-view:hover { opacity: 0.88; }
+    .run-row-date {
+      font-family: var(--mono);
+      font-size: 0.65rem;
+      color: var(--muted-fg);
+    }
+
+    .btn-delete {
+      font-family: var(--sans);
+      font-size: 0.75rem;
+      font-weight: 500;
+      padding: 5px 12px;
+      border-radius: 5px;
+      cursor: pointer;
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--muted-fg);
+      transition: border-color 0.15s, color 0.15s;
+      flex-shrink: 0;
+    }
+
+    .btn-delete:hover { border-color: #ef4444; color: #f87171; }
+
+    .btn-view-sm {
+      font-family: var(--sans);
+      font-size: 0.75rem;
+      font-weight: 500;
+      padding: 5px 12px;
+      border-radius: 5px;
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--muted-fg);
+      text-decoration: none;
+      transition: border-color 0.15s, color 0.15s;
+      flex-shrink: 0;
+    }
+
+    .btn-view-sm:hover { border-color: #52525b; color: var(--fg); }
+
+    .section-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .loading-msg {
+      font-size: 0.8125rem;
+      color: var(--muted-fg);
+      text-align: center;
+      padding: 4px 0;
+    }
 
     .unavail-msg {
       font-size: 0.8125rem;
@@ -410,84 +428,23 @@ export class AppSample extends LitElement {
     }
   `;
 
-  private _renderLocalResult(run: DeviceRun) {
+  private _renderCloudResult(d: CloudDoc) {
+    const name = d.tagId || '—';
+    const date = d.startTime ? this._fmt(d.startTime) : d.uploadedAt ? this._fmt(d.uploadedAt) : '—';
     return html`
-      <div class="result-card local">
-        <div class="result-header">
-          <span class="result-dot local"></span>
-          <span class="result-title">${run.meta.tagId || `Run #${run.id}`}</span>
-          <span class="result-badge local">On device</span>
+      <div class="run-row">
+        <div class="run-row-info">
+          <span class="run-row-name">${name}</span>
+          <span class="run-row-date">${date}</span>
         </div>
-        <div class="result-body">
-          ${run.meta.startTime ? html`
-            <div class="info-row">
-              <span class="info-key">Sampled</span>
-              <span class="info-val">${this._fmt(run.meta.startTime)}</span>
-            </div>` : ''}
-          <div class="info-row">
-            <span class="info-key">Downloaded</span>
-            <span class="info-val">${this._fmt(run.downloadedAt)}</span>
-          </div>
-          ${run.meta.lat ? html`
-            <div class="info-row">
-              <span class="info-key">Location</span>
-              <span class="info-val">${run.meta.lat}, ${run.meta.lon}</span>
-            </div>` : ''}
-          <div class="info-row">
-            <span class="info-key">Fields</span>
-            <span class="info-val">${run.fields.filter(f => f !== 'timestamp').join(', ')}</span>
-          </div>
-        </div>
-        <div class="result-actions">
-          <a class="btn-view" href="#run/${run.id}">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
-              <path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/>
-            </svg>
-            View Run
-          </a>
-        </div>
-      </div>
-    `;
-  }
-
-  private _renderCloudResult(doc: CloudDoc) {
-    return html`
-      <div class="result-card cloud">
-        <div class="result-header">
-          <span class="result-dot cloud"></span>
-          <span class="result-title">${doc.tagId || '—'}</span>
-          <span class="result-badge cloud">Cloud only</span>
-        </div>
-        <div class="result-body">
-          ${doc.startTime ? html`
-            <div class="info-row">
-              <span class="info-key">Sampled</span>
-              <span class="info-val">${this._fmt(doc.startTime)}</span>
-            </div>` : ''}
-          <div class="info-row">
-            <span class="info-key">Downloaded</span>
-            <span class="info-val">${this._fmt(doc.downloadedAt)}</span>
-          </div>
-          <div class="info-row">
-            <span class="info-key">Uploaded</span>
-            <span class="info-val">${this._fmt(doc.uploadedAt)}</span>
-          </div>
-          ${doc.meta.lat ? html`
-            <div class="info-row">
-              <span class="info-key">Location</span>
-              <span class="info-val">${doc.meta.lat}, ${doc.meta.lon}</span>
-            </div>` : ''}
-          <div class="info-row">
-            <span class="info-key">Fields</span>
-            <span class="info-val">${doc.fields.filter(f => f !== 'timestamp').join(', ')}</span>
-          </div>
-        </div>
+        <a class="btn-view-sm" href="#cloud-run/${d.firebaseDocId}">View</a>
+        <button class="btn-delete" @click=${() => this._delete(d.firebaseDocId)}>Delete</button>
       </div>
     `;
   }
 
   render() {
-    const totalResults = this.localResults.length + this.cloudResults.length;
+    const count = this.cloudResults.length;
 
     return html`
       <main>
@@ -548,23 +505,35 @@ export class AppSample extends LitElement {
             />
           </div>
 
-          <!-- Results -->
+          <!-- Tag search results -->
           ${this.searching ? html`
             <p class="searching-msg">Searching…</p>
           ` : this.searched ? html`
-            <span class="results-label">
-              ${totalResults === 0 ? 'No results' : `${totalResults} result${totalResults > 1 ? 's' : ''}`}
-            </span>
-            ${totalResults === 0 ? html`
-              <div class="no-results">
-                No run found for tag <strong>${this.tagId}</strong>.<br>
-                Try syncing logs from the device first.
+            <div class="card">
+              <div class="card-header">
+                <span class="card-title">
+                  ${count === 0 ? 'No results' : `${count} result${count > 1 ? 's' : ''} for tag`}
+                </span>
               </div>
-            ` : html`
-              ${this.localResults.map(r => this._renderLocalResult(r))}
-              ${this.cloudResults.map(d => this._renderCloudResult(d))}
-            `}
+              ${count === 0 ? html`
+                <p class="searching-msg">No cloud run found for tag <strong>${this.tagId}</strong>.</p>
+              ` : this.cloudResults.map(d => this._renderCloudResult(d))}
+            </div>
           ` : ''}
+
+          <!-- All cloud runs -->
+          <div class="card">
+            <div class="card-header">
+              <span class="card-title">All Cloud Runs (${this.allDocs.length})</span>
+            </div>
+            ${this.loadingAll ? html`
+              <p class="loading-msg">Loading…</p>
+            ` : this.loadError ? html`
+              <p class="searching-msg">${this.loadError}</p>
+            ` : this.allDocs.length === 0 ? html`
+              <p class="searching-msg">No runs uploaded to cloud yet.</p>
+            ` : this.allDocs.map(d => this._renderCloudResult(d))}
+          </div>
 
         </div>
       </main>

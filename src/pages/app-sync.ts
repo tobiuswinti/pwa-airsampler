@@ -7,7 +7,6 @@ import {
   getDeviceRuns,
   hasDeviceRun,
   saveDeviceRun,
-  deleteDeviceRun,
   onDeviceRunsChanged,
   parseMeta,
   applyCarryForward,
@@ -21,6 +20,7 @@ export class AppSync extends LitElement {
 
   @state() private connected = bleService.connStatus === 'connected';
   @state() private runs: DeviceRun[] = getDeviceRuns();
+  @state() private deviceOnlyIds: number[] = [];
 
   @state() private syncStatus: SyncStatus = 'idle';
   @state() private syncMsg = '';
@@ -29,25 +29,36 @@ export class AppSync extends LitElement {
   @state() private uploadPending = 0;
   @state() private uploading = false;
 
-  private _onStatus   = () => { this.connected = bleService.connStatus === 'connected'; };
+  private _onStatus    = () => { this.connected = bleService.connStatus === 'connected'; };
+  private _onSyncCheck = () => {
+    const localIds = new Set(getDeviceRuns().map(r => r.id));
+    this.deviceOnlyIds = bleService.deviceRunIds.filter(id => !localIds.has(id));
+  };
   private _unsub?:  () => void;
   private _unsubUp?: () => void;
 
   connectedCallback() {
     super.connectedCallback();
-    bleService.addEventListener('status-changed', this._onStatus);
-    this._unsub   = onDeviceRunsChanged(() => { this.runs = getDeviceRuns(); this._refreshUploadState(); });
+    bleService.addEventListener('status-changed',     this._onStatus);
+    bleService.addEventListener('sync-check-changed', this._onSyncCheck);
+    this._unsub   = onDeviceRunsChanged(() => {
+      this.runs = getDeviceRuns();
+      this._onSyncCheck();
+      this._refreshUploadState();
+    });
     this._unsubUp = onUploadProgress((pending) => {
       this.uploadPending = pending;
       this.uploading     = isUploading();
       this.runs          = getDeviceRuns();
     });
+    this._onSyncCheck();
     this._refreshUploadState();
   }
 
   disconnectedCallback() {
     super.disconnectedCallback();
-    bleService.removeEventListener('status-changed', this._onStatus);
+    bleService.removeEventListener('status-changed',     this._onStatus);
+    bleService.removeEventListener('sync-check-changed', this._onSyncCheck);
     this._unsub?.();
     this._unsubUp?.();
   }
@@ -222,17 +233,38 @@ export class AppSync extends LitElement {
     `;
   }
 
-  /* ── Download run as CSV ── */
-  private _downloadRun(run: DeviceRun) {
-    const header = [run.fields.join(','), run.units.join(',')];
-    const dataRows = run.rows.map(r => r.join(','));
-    const blob = new Blob([[...header, ...dataRows].join('\n')], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `run_${run.id}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
+  /* ── Render a device-only run (not yet downloaded) ── */
+  private _renderDeviceOnlyRun(id: number) {
+    return html`
+      <div class="run-item device-only">
+        <div class="run-info">
+          <span class="run-name">Run #${id}</span>
+          <span class="run-date">Not yet downloaded</span>
+        </div>
+
+        <div class="run-steps">
+          <span class="step-btn active" data-tip="Exists on device">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-7 14l-5-5 1.41-1.41L12 14.17l7.59-7.59L21 8l-9 9z"/>
+            </svg>
+          </span>
+          <span class="step-connector"></span>
+          <span class="step-btn warn" data-tip="Not downloaded">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M17 12h-5V7h-2v5H5l7 7 7-7zm-7 9v2h10v-2H10z"/>
+            </svg>
+          </span>
+          <span class="step-connector"></span>
+          <span class="step-btn warn" data-tip="Not uploaded">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M19.35 10.04A7.49 7.49 0 0012 4C9.11 4 6.6 5.64 5.35 8.04A5.994 5.994 0 000 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96zM14 13v4h-4v-4H7l5-5 5 5h-3z"/>
+            </svg>
+          </span>
+        </div>
+
+        <span class="run-arrow">›</span>
+      </div>
+    `;
   }
 
   /* ── Styles ── */
@@ -402,6 +434,8 @@ export class AppSync extends LitElement {
     }
 
     .run-item:hover { background: #18181b; border-color: #3f3f46; }
+
+    .run-item.device-only { opacity: 0.55; cursor: default; pointer-events: none; }
 
     .run-info {
       flex: 1;
@@ -620,12 +654,13 @@ export class AppSync extends LitElement {
           <!-- Local runs -->
           <div class="card">
             <div class="card-header">
-              <span class="card-title">Downloaded Runs (${this.runs.length})</span>
+              <span class="card-title">Runs (${this.runs.length + this.deviceOnlyIds.length})</span>
             </div>
-            ${this.runs.length === 0
-              ? html`<div class="empty-msg">No runs downloaded yet. Connect to device and press Sync.</div>`
+            ${this.runs.length === 0 && this.deviceOnlyIds.length === 0
+              ? html`<div class="empty-msg">No runs found. Connect to device and press Sync.</div>`
               : html`
                 <div class="runs-list">
+                  ${this.deviceOnlyIds.map(id => this._renderDeviceOnlyRun(id))}
                   ${this.runs.map(run => this._renderRun(run))}
                 </div>
               `

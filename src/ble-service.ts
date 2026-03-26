@@ -48,6 +48,7 @@ class BleService extends EventTarget {
   liveState: LiveState | null = null;
   sysLog: string[] = [];
   unsyncedCount: number = 0;
+  deviceRunIds: number[] = [];
 
   private bleDevice:  BluetoothDevice | null = null;
   private bleService: BluetoothRemoteGATTService | null = null;
@@ -115,9 +116,10 @@ class BleService extends EventTarget {
   disconnect(): void {
     this.isManualDisconnect = true;
     if (this.bleDevice?.gatt?.connected) this.bleDevice.gatt.disconnect();
-    this.bleDevice = null;
-    this.liveState = null;
+    this.bleDevice    = null;
+    this.liveState    = null;
     this.unsyncedCount = 0;
+    this.deviceRunIds  = [];
     this._setStatus('disconnected');
   }
 
@@ -143,6 +145,7 @@ class BleService extends EventTarget {
           const j = JSON.parse(t);
           if (Array.isArray(j['runs'])) {
             const ids: number[] = (j['runs'] as unknown[]).map(Number);
+            this.deviceRunIds  = ids;
             this.unsyncedCount = ids.filter(id => !hasDeviceRun(id)).length;
             this.dispatchEvent(new CustomEvent('sync-check-changed'));
           }
