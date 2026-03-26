@@ -11,12 +11,18 @@ export class AppHome extends LitElement {
   @state() private liveState: LiveState | null = bleService.liveState;
   @state() private unsyncedCount: number = bleService.unsyncedCount;
   @state() private pendingUpload: number = getDeviceRuns().filter(r => !r.firebaseId).length;
+  @state() private adminMode: boolean = localStorage.getItem('adminMode') === 'true';
 
   private _onStatus    = () => { this.connStatus    = bleService.connStatus; };
   private _onState     = () => { this.liveState     = bleService.liveState; };
   private _onSyncCheck = () => { this.unsyncedCount = bleService.unsyncedCount; };
   private _onRuns      = () => { this.pendingUpload = getDeviceRuns().filter(r => !r.firebaseId).length; };
   private _unsubRuns: (() => void) | null = null;
+
+  private _toggleAdmin() {
+    this.adminMode = !this.adminMode;
+    localStorage.setItem('adminMode', String(this.adminMode));
+  }
 
   connectedCallback() {
     super.connectedCallback();
@@ -173,16 +179,6 @@ export class AppHome extends LitElement {
       margin: 10px 0 0;
     }
 
-    .legacy-label { color: #3f3f46; }
-
-    .nav-card.legacy {
-      opacity: 0.5;
-      padding: 10px 14px;
-    }
-
-    .nav-card.legacy .nav-label { font-size: 0.8125rem; }
-    .nav-card.legacy .nav-desc  { font-size: 0.7rem; }
-
     .nav-badge {
       font-size: 0.6875rem;
       font-weight: 600;
@@ -201,6 +197,51 @@ export class AppHome extends LitElement {
       padding: 20px 0 0;
       line-height: 1.6;
     }
+
+    .admin-toggle-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 14px 2px 0;
+    }
+
+    .admin-toggle-label {
+      font-size: 0.75rem;
+      color: var(--muted-fg);
+    }
+
+    .switch {
+      position: relative;
+      width: 36px;
+      height: 20px;
+      flex-shrink: 0;
+    }
+
+    .switch input { opacity: 0; width: 0; height: 0; }
+
+    .switch-track {
+      position: absolute;
+      inset: 0;
+      border-radius: 10px;
+      background: #3f3f46;
+      border: 1px solid var(--border);
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+
+    .switch input:checked + .switch-track { background: #22c55e; border-color: #22c55e; }
+
+    .switch-track::after {
+      content: '';
+      position: absolute;
+      top: 2px; left: 2px;
+      width: 14px; height: 14px;
+      border-radius: 50%;
+      background: #fff;
+      transition: transform 0.2s;
+    }
+
+    .switch input:checked + .switch-track::after { transform: translateX(16px); }
   `;
 
   render() {
@@ -310,40 +351,52 @@ export class AppHome extends LitElement {
             <span class="nav-arrow">›</span>
           </a>
 
-          <div class="separator"></div>
-          <span class="group-label legacy-label">Legacy (will be replaced)</span>
+          ${this.adminMode ? html`
+            <div class="separator"></div>
+            <span class="group-label">Admin</span>
 
-          <a class="nav-card legacy" href="${resolveRouterPath('rfid')}">
-            <div class="nav-text">
-              <span class="nav-label">RFID / NFC</span>
-              <span class="nav-desc">Scan &amp; read NFC tags</span>
+            <a class="nav-card ${bleClass}" href="${resolveRouterPath('ble')}">
+              <div class="nav-icon" style="background:rgba(255,255,255,0.06);">
+                <svg viewBox="0 0 24 24" fill="#a1a1aa"><path d="M17.71 7.71L12 2h-1v7.59L6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 11 14.41V22h1l5.71-5.71-4.3-4.29 4.3-4.29zM13 5.83l1.88 1.88L13 9.59V5.83zm1.88 10.46L13 18.17v-3.76l1.88 1.88z"/></svg>
+              </div>
+              <div class="nav-text">
+                <span class="nav-label">BLE Control</span>
+                <span class="nav-desc">Send raw BLE commands to device</span>
+              </div>
+              <span class="nav-arrow">›</span>
+            </a>
+
+            <a class="nav-card ${bleClass}" href="${resolveRouterPath('device')}">
+              <div class="nav-icon" style="background:rgba(255,255,255,0.06);">
+                <svg viewBox="0 0 24 24" fill="#a1a1aa"><path d="M22 9V7h-2V5c0-1.1-.9-2-2-2H4c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2v-2h2v-2h-2v-2h2v-2h-2V9h2zm-4 10H4V5h14v14z"/><path d="M6 13h5v4H6zm6-6h3v3h-3zM6 7h5v5H6zm6 4h3v6h-3z"/></svg>
+              </div>
+              <div class="nav-text">
+                <span class="nav-label">Device Settings</span>
+                <span class="nav-desc">Configure device parameters</span>
+              </div>
+              <span class="nav-arrow">›</span>
+            </a>
+
+          ` : ''}
+
+          <a class="nav-card" href="${resolveRouterPath('about')}">
+            <div class="nav-icon" style="background:rgba(255,255,255,0.06);">
+              <svg viewBox="0 0 24 24" fill="#a1a1aa"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg>
             </div>
-            <span class="nav-arrow">›</span>
-          </a>
-
-          <a class="nav-card legacy" href="${resolveRouterPath('log')}">
-            <div class="nav-text">
-              <span class="nav-label">Log Viewer</span>
-              <span class="nav-desc">View sensor data charts &amp; download CSV</span>
-            </div>
-            <span class="nav-arrow">›</span>
-          </a>
-
-          <a class="nav-card legacy" href="${resolveRouterPath('history')}">
-            <div class="nav-text">
-              <span class="nav-label">History</span>
-              <span class="nav-desc">Browse &amp; view uploaded log files</span>
-            </div>
-            <span class="nav-arrow">›</span>
-          </a>
-
-          <a class="nav-card legacy" href="${resolveRouterPath('about')}">
             <div class="nav-text">
               <span class="nav-label">About</span>
               <span class="nav-desc">Project info &amp; documentation</span>
             </div>
             <span class="nav-arrow">›</span>
           </a>
+
+          <div class="admin-toggle-row">
+            <span class="admin-toggle-label">Admin mode</span>
+            <label class="switch">
+              <input type="checkbox" .checked=${this.adminMode} @change=${this._toggleAdmin}>
+              <span class="switch-track"></span>
+            </label>
+          </div>
 
           <p class="footer-note">Requires Chrome on Android for BLE &amp; NFC features.</p>
 

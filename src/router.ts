@@ -24,34 +24,16 @@ const routes: Route[] = [
     load: () => import('./pages/app-about/app-about.js'),
   },
   {
-    hash: '#rfid',
-    title: 'AirSampler — RFID Scanner',
-    render: () => html`<app-rfid></app-rfid>`,
-    load: () => import('./pages/app-rfid.js'),
-  },
-  {
     hash: '#ble',
     title: 'AirSampler — BLE Control',
     render: () => html`<app-ble></app-ble>`,
     load: () => import('./pages/app-ble.js'),
   },
   {
-    hash: '#log',
-    title: 'AirSampler — Log Viewer',
-    render: () => html`<app-log></app-log>`,
-    load: () => import('./pages/app-log.js'),
-  },
-  {
     hash: '#device',
     title: 'AirSampler — Device',
     render: () => html`<app-device></app-device>`,
     load: () => import('./pages/app-device.js'),
-  },
-  {
-    hash: '#history',
-    title: 'AirSampler — History',
-    render: () => html`<app-history></app-history>`,
-    load: () => import('./pages/app-history.js'),
   },
   {
     hash: '#control',
