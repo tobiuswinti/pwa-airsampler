@@ -27,215 +27,155 @@ export class AppConnect extends LitElement {
 
   static styles = css`
     :host {
-      --bg:      #08090d;
-      --surface: #0e1118;
-      --border:  #1e2535;
-      --accent:  #00e5ff;
-      --accent2: #7c3aed;
-      --ok:      #00ffa3;
-      --warn:    #ff6b35;
-      --text:    #c8d6ef;
-      --muted:   #4a5568;
-      --mono:    'Share Tech Mono', monospace;
-      --display: 'Oxanium', sans-serif;
+      --bg:       #09090b;
+      --card:     #09090b;
+      --border:   #27272a;
+      --fg:       #fafafa;
+      --muted-fg: #71717a;
+      --sans: 'Geist', 'Inter', system-ui, sans-serif;
+      --mono: 'Share Tech Mono', monospace;
     }
 
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
     main {
-      font-family: var(--display);
+      font-family: var(--sans);
       background: var(--bg);
-      color: var(--text);
+      color: var(--fg);
       min-height: 100vh;
       display: flex;
       flex-direction: column;
       align-items: center;
-      padding: 0 0 60px;
-      position: relative;
-    }
-
-    main::before {
-      content: '';
-      position: fixed;
-      inset: 0;
-      background-image:
-        linear-gradient(rgba(0,229,255,0.03) 1px, transparent 1px),
-        linear-gradient(90deg, rgba(0,229,255,0.03) 1px, transparent 1px);
-      background-size: 40px 40px;
-      pointer-events: none;
-      z-index: 0;
+      padding: 0 0 80px;
     }
 
     .page-header {
       width: 100%;
-      padding: 20px 24px 0;
+      max-width: 480px;
+      padding: 24px 20px 0;
       display: flex;
       align-items: center;
       gap: 12px;
-      z-index: 1;
     }
 
-    .logo-icon {
-      width: 34px; height: 34px;
-      border: 2px solid var(--accent2);
-      border-radius: 8px;
+    .back-btn {
       display: flex; align-items: center; justify-content: center;
-      box-shadow: 0 0 12px rgba(124,58,237,0.4);
-      flex-shrink: 0;
+      width: 32px; height: 32px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: transparent;
+      color: var(--muted-fg);
+      cursor: pointer;
+      transition: color 0.15s, border-color 0.15s;
+      text-decoration: none;
+      font-size: 1rem;
     }
 
-    .logo-icon svg { width: 18px; height: 18px; fill: var(--accent2); }
+    .back-btn:hover { color: var(--fg); border-color: #52525b; }
 
     .page-title {
-      font-size: 1rem;
-      font-weight: 700;
-      letter-spacing: 0.18em;
-      text-transform: uppercase;
-      color: var(--accent2);
+      font-size: 0.875rem;
+      font-weight: 600;
+      color: var(--fg);
     }
 
     .content {
       width: 100%;
-      max-width: 640px;
-      padding: 28px 20px;
-      z-index: 1;
-      display: flex;
-      flex-direction: column;
-      gap: 16px;
-    }
-
-    .connect-card {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: 14px;
-      padding: 36px 24px;
+      max-width: 400px;
+      padding: 48px 20px 20px;
       display: flex;
       flex-direction: column;
       align-items: center;
-      gap: 24px;
-      position: relative;
-      overflow: hidden;
+      gap: 20px;
     }
 
-    .connect-card::after {
-      content: '';
-      position: absolute;
-      top: 0; left: 0; right: 0;
-      height: 2px;
-      background: linear-gradient(90deg, transparent, var(--accent2), transparent);
-    }
-
-    .pulse-wrap {
+    .ble-visual {
       position: relative;
-      width: 140px; height: 140px;
+      width: 120px; height: 120px;
       display: flex; align-items: center; justify-content: center;
     }
 
     .ring {
       position: absolute;
       border-radius: 50%;
-      border: 1.5px solid var(--accent2);
+      border: 1px solid #27272a;
       opacity: 0;
     }
 
-    .ring:nth-child(1) { width: 64px;  height: 64px; }
-    .ring:nth-child(2) { width: 96px;  height: 96px; }
-    .ring:nth-child(3) { width: 128px; height: 128px; }
+    .ring:nth-child(1) { width: 64px;  height: 64px;  }
+    .ring:nth-child(2) { width: 90px;  height: 90px;  }
+    .ring:nth-child(3) { width: 116px; height: 116px; }
 
-    .pulse-wrap.active .ring              { animation: ripple 2s ease-out infinite; }
-    .pulse-wrap.active .ring:nth-child(2) { animation-delay: 0.5s; }
-    .pulse-wrap.active .ring:nth-child(3) { animation-delay: 1s; }
+    .ble-visual.scanning .ring { animation: ripple 2s ease-out infinite; border-color: #a1a1aa; }
+    .ble-visual.scanning .ring:nth-child(2) { animation-delay: 0.5s; }
+    .ble-visual.scanning .ring:nth-child(3) { animation-delay: 1s; }
 
     @keyframes ripple {
-      0%   { transform: scale(0.7); opacity: 0.7; }
-      100% { transform: scale(1.1); opacity: 0; }
+      0%   { opacity: 0.5; transform: scale(0.85); }
+      100% { opacity: 0;   transform: scale(1.05); }
     }
 
-    .ble-icon {
-      width: 56px; height: 56px;
+    .ble-icon-wrap {
+      width: 52px; height: 52px;
+      border: 1px solid var(--border);
       border-radius: 50%;
       display: flex; align-items: center; justify-content: center;
+      background: #18181b;
       z-index: 1;
-      transition: all 0.3s;
-      border: 2px solid var(--accent2);
-      background: rgba(124,58,237,0.1);
+      transition: border-color 0.3s;
     }
 
-    .ble-icon svg { width: 28px; height: 28px; fill: var(--accent2); }
+    .ble-icon-wrap svg { width: 24px; height: 24px; fill: #a1a1aa; }
 
     .status-text {
       font-family: var(--mono);
-      font-size: 0.82rem;
-      letter-spacing: 0.1em;
-      text-transform: uppercase;
+      font-size: 0.8rem;
+      letter-spacing: 0.06em;
+      color: var(--muted-fg);
       text-align: center;
     }
 
-    .status-text.disconnected { color: var(--muted); }
-    .status-text.connecting   { color: orange; }
-    .status-text.connected    { color: var(--ok); }
-    .status-text.failed       { color: var(--warn); }
+    .status-text.connecting { color: #f59e0b; }
+    .status-text.failed     { color: #ef4444; }
 
     .btn-connect {
-      font-family: var(--display);
-      font-size: 0.9rem;
-      font-weight: 700;
-      letter-spacing: 0.18em;
-      text-transform: uppercase;
-      padding: 14px 48px;
-      border-radius: 8px;
+      font-family: var(--sans);
+      font-size: 0.875rem;
+      font-weight: 500;
+      letter-spacing: -0.01em;
+      padding: 10px 32px;
+      border-radius: 6px;
       border: none;
       cursor: pointer;
-      background: linear-gradient(135deg, var(--accent2), var(--accent));
-      color: #fff;
-      transition: opacity 0.2s, transform 0.15s;
-      box-shadow: 0 0 20px rgba(124,58,237,0.25);
+      background: var(--fg);
+      color: #09090b;
+      transition: opacity 0.15s;
     }
 
-    .btn-connect:hover    { opacity: 0.88; transform: translateY(-1px); }
-    .btn-connect:active   { transform: translateY(0); }
-    .btn-connect:disabled { opacity: 0.3; cursor: not-allowed; transform: none; }
+    .btn-connect:hover:not(:disabled)  { opacity: 0.88; }
+    .btn-connect:disabled { opacity: 0.35; cursor: not-allowed; }
 
     .compat-box {
-      background: rgba(255,107,53,0.06);
-      border: 1px solid rgba(255,107,53,0.3);
-      border-radius: 12px;
-      padding: 14px 18px;
-      font-size: 0.8rem;
-      line-height: 1.65;
-      color: #e2a98a;
+      width: 100%;
+      padding: 12px 14px;
+      border: 1px solid #3f2a1a;
+      border-radius: 8px;
+      background: rgba(245,158,11,0.06);
+      font-size: 0.78rem;
+      line-height: 1.6;
+      color: #fbbf24;
       font-family: var(--mono);
     }
-
-    .nav-back {
-      font-family: var(--mono);
-      font-size: 0.72rem;
-      letter-spacing: 0.1em;
-      text-transform: uppercase;
-      background: none;
-      border: 1px solid var(--border);
-      color: var(--muted);
-      padding: 9px 18px;
-      border-radius: 6px;
-      cursor: pointer;
-      transition: color 0.2s, border-color 0.2s;
-      text-decoration: none;
-      display: inline-block;
-    }
-
-    .nav-back:hover { color: var(--accent); border-color: var(--accent); }
   `;
 
   render() {
-    const connecting  = this.connStatus === 'connecting';
+    const connecting   = this.connStatus === 'connecting';
     const bleSupported = !!navigator.bluetooth;
 
     return html`
       <main>
         <div class="page-header">
-          <div class="logo-icon">
-            <svg viewBox="0 0 24 24"><path d="M17.71 7.71L12 2h-1v7.59L6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 11 14.41V22h1l5.71-5.71-4.3-4.29 4.3-4.29zM13 5.83l1.88 1.88L13 9.59V5.83zm1.88 10.46L13 18.17v-3.76l1.88 1.88z"/></svg>
-          </div>
+          <a class="back-btn" href="${resolveRouterPath()}">←</a>
           <span class="page-title">Connect</span>
         </div>
 
@@ -243,34 +183,31 @@ export class AppConnect extends LitElement {
 
           ${!bleSupported ? html`
             <div class="compat-box">
-              Web Bluetooth is not available. Use Chrome on Android or enable the experimental flag in desktop Chrome (chrome://flags/#enable-web-bluetooth).
+              Web Bluetooth is not available. Use Chrome on Android or enable
+              chrome://flags/#enable-web-bluetooth on desktop.
             </div>
           ` : ''}
 
-          <div class="connect-card">
-            <div class="pulse-wrap ${connecting ? 'active' : ''}">
-              <div class="ring"></div>
-              <div class="ring"></div>
-              <div class="ring"></div>
-              <div class="ble-icon">
-                <svg viewBox="0 0 24 24"><path d="M17.71 7.71L12 2h-1v7.59L6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 11 14.41V22h1l5.71-5.71-4.3-4.29 4.3-4.29zM13 5.83l1.88 1.88L13 9.59V5.83zm1.88 10.46L13 18.17v-3.76l1.88 1.88z"/></svg>
-              </div>
+          <div class="ble-visual ${connecting ? 'scanning' : ''}">
+            <div class="ring"></div>
+            <div class="ring"></div>
+            <div class="ring"></div>
+            <div class="ble-icon-wrap">
+              <svg viewBox="0 0 24 24"><path d="M17.71 7.71L12 2h-1v7.59L6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 11 14.41V22h1l5.71-5.71-4.3-4.29 4.3-4.29zM13 5.83l1.88 1.88L13 9.59V5.83zm1.88 10.46L13 18.17v-3.76l1.88 1.88z"/></svg>
             </div>
-
-            <div class="status-text ${this.connStatus}">
-              ${this.connStatus === 'connecting' ? 'Connecting…'
-              : this.connStatus === 'failed'     ? 'Connection failed — try again'
-              : 'Not connected'}
-            </div>
-
-            <button class="btn-connect"
-              ?disabled=${!bleSupported || connecting}
-              @click=${() => bleService.connect()}>
-              ${connecting ? 'Connecting…' : 'Connect'}
-            </button>
           </div>
 
-          <div><a class="nav-back" href="${resolveRouterPath()}">← Back to Home</a></div>
+          <p class="status-text ${this.connStatus}">
+            ${connecting                           ? 'Scanning for AirSampler…'
+            : this.connStatus === 'failed'         ? 'Connection failed — try again'
+            : 'Tap to scan for nearby devices'}
+          </p>
+
+          <button class="btn-connect"
+            ?disabled=${!bleSupported || connecting}
+            @click=${() => bleService.connect()}>
+            ${connecting ? 'Connecting…' : 'Connect'}
+          </button>
 
         </div>
       </main>

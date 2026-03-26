@@ -107,131 +107,111 @@ export class AppSync extends LitElement {
   /* ── Styles ── */
   static styles = css`
     :host {
-      --bg:      #08090d;
-      --surface: #0e1118;
-      --border:  #1e2535;
-      --accent:  #00e5ff;
-      --accent2: #7c3aed;
-      --ok:      #00ffa3;
-      --warn:    #ff6b35;
-      --text:    #c8d6ef;
-      --muted:   #4a5568;
-      --mono:    'Share Tech Mono', monospace;
-      --display: 'Oxanium', sans-serif;
+      --bg:       #09090b;
+      --card:     #09090b;
+      --border:   #27272a;
+      --fg:       #fafafa;
+      --muted-fg: #71717a;
+      --sans: 'Geist', 'Inter', system-ui, sans-serif;
+      --mono: 'Share Tech Mono', monospace;
     }
 
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
     main {
-      font-family: var(--display);
+      font-family: var(--sans);
       background: var(--bg);
-      color: var(--text);
+      color: var(--fg);
       min-height: 100vh;
       display: flex;
       flex-direction: column;
       align-items: center;
-      padding: 0 0 60px;
-      position: relative;
-    }
-
-    main::before {
-      content: '';
-      position: fixed;
-      inset: 0;
-      background-image:
-        linear-gradient(rgba(0,229,255,0.03) 1px, transparent 1px),
-        linear-gradient(90deg, rgba(0,229,255,0.03) 1px, transparent 1px);
-      background-size: 40px 40px;
-      pointer-events: none;
-      z-index: 0;
+      padding: 0 0 80px;
     }
 
     .page-header {
       width: 100%;
-      padding: 20px 24px 0;
+      max-width: 560px;
+      padding: 24px 20px 0;
       display: flex;
       align-items: center;
       gap: 12px;
-      z-index: 1;
     }
 
-    .logo-icon {
-      width: 34px; height: 34px;
-      border: 2px solid var(--accent2);
-      border-radius: 8px;
+    .back-btn {
       display: flex; align-items: center; justify-content: center;
-      box-shadow: 0 0 12px rgba(124,58,237,0.4);
-      flex-shrink: 0;
+      width: 32px; height: 32px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: transparent;
+      color: var(--muted-fg);
+      cursor: pointer;
+      transition: color 0.15s, border-color 0.15s;
+      text-decoration: none;
+      font-size: 1rem;
     }
 
-    .logo-icon svg { width: 18px; height: 18px; fill: var(--accent2); }
+    .back-btn:hover { color: var(--fg); border-color: #52525b; }
 
     .page-title {
-      font-size: 1rem;
-      font-weight: 700;
-      letter-spacing: 0.18em;
-      text-transform: uppercase;
-      color: var(--accent2);
+      font-size: 0.875rem;
+      font-weight: 600;
+      color: var(--fg);
     }
 
     .content {
       width: 100%;
-      max-width: 640px;
-      padding: 28px 20px;
-      z-index: 1;
+      max-width: 560px;
+      padding: 20px;
       display: flex;
       flex-direction: column;
-      gap: 16px;
-    }
-
-    .disconnected-notice {
-      background: rgba(255,107,53,0.06);
-      border: 1px solid rgba(255,107,53,0.3);
-      border-radius: 12px;
-      padding: 14px 18px;
-      font-size: 0.82rem;
-      line-height: 1.65;
-      color: #e2a98a;
-      display: flex;
-      align-items: center;
       gap: 12px;
     }
 
-    .disconnected-notice a {
-      color: var(--accent);
-      text-decoration: none;
-      font-family: var(--mono);
+    .alert {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 11px 14px;
+      border: 1px solid #3f1f1a;
+      border-radius: 8px;
+      background: rgba(239,68,68,0.06);
+      font-size: 0.8125rem;
+      color: #fca5a5;
+    }
+
+    .alert a {
+      margin-left: auto;
       font-size: 0.75rem;
-      border: 1px solid var(--accent);
-      padding: 4px 10px;
+      font-family: var(--mono);
+      color: var(--fg);
+      border: 1px solid var(--border);
+      padding: 3px 10px;
       border-radius: 5px;
+      text-decoration: none;
       white-space: nowrap;
     }
 
     .card {
-      background: var(--surface);
+      background: var(--card);
       border: 1px solid var(--border);
-      border-radius: 14px;
-      padding: 20px;
-      position: relative;
-      overflow: hidden;
+      border-radius: 8px;
+      padding: 16px 18px;
     }
 
-    .card::after {
-      content: '';
-      position: absolute;
-      top: 0; left: 0; right: 0;
-      height: 2px;
-      background: linear-gradient(90deg, transparent, var(--accent2), transparent);
+    .card-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 14px;
     }
 
     .card-title {
-      font-family: var(--mono);
-      font-size: 0.72rem;
-      letter-spacing: 0.1em;
+      font-size: 0.75rem;
+      font-weight: 500;
+      letter-spacing: 0.05em;
       text-transform: uppercase;
-      color: var(--accent2);
-      margin-bottom: 16px;
+      color: var(--muted-fg);
     }
 
     .sync-row {
@@ -242,66 +222,61 @@ export class AppSync extends LitElement {
     }
 
     .btn-sync {
-      font-family: var(--display);
-      font-size: 0.85rem;
-      font-weight: 700;
-      letter-spacing: 0.18em;
-      text-transform: uppercase;
-      padding: 13px 36px;
-      border-radius: 8px;
+      font-family: var(--sans);
+      font-size: 0.875rem;
+      font-weight: 500;
+      padding: 10px 28px;
+      border-radius: 6px;
       border: none;
       cursor: pointer;
-      background: linear-gradient(135deg, var(--accent2), var(--accent));
-      color: #fff;
-      transition: opacity 0.2s, transform 0.15s;
-      box-shadow: 0 0 20px rgba(124,58,237,0.2);
+      background: var(--fg);
+      color: #09090b;
+      transition: opacity 0.15s;
     }
 
-    .btn-sync:hover:not(:disabled)  { opacity: 0.88; transform: translateY(-1px); }
+    .btn-sync:hover:not(:disabled) { opacity: 0.88; }
     .btn-sync:disabled { opacity: 0.3; cursor: not-allowed; }
 
     .sync-status {
       font-family: var(--mono);
       font-size: 0.72rem;
-      letter-spacing: 0.04em;
     }
 
-    .sync-status.listing   { color: var(--accent); }
-    .sync-status.downloading { color: var(--accent); animation: blink 0.8s infinite; }
-    .sync-status.done      { color: var(--ok); }
-    .sync-status.error     { color: var(--warn); }
+    .sync-status.listing,
+    .sync-status.downloading { color: #a1a1aa; animation: blink 0.8s infinite; }
+    .sync-status.done  { color: #22c55e; }
+    .sync-status.error { color: #f87171; }
 
     @keyframes blink { 50% { opacity: 0.4; } }
 
     .runs-list {
       display: flex;
       flex-direction: column;
-      gap: 10px;
+      gap: 6px;
     }
 
     .run-item {
-      background: rgba(255,255,255,0.02);
       border: 1px solid var(--border);
-      border-radius: 10px;
+      border-radius: 6px;
       overflow: hidden;
     }
 
     .run-header {
       display: flex;
       align-items: center;
-      gap: 12px;
-      padding: 13px 16px;
+      gap: 10px;
+      padding: 11px 14px;
       cursor: pointer;
       user-select: none;
-      transition: background 0.15s;
+      transition: background 0.12s;
     }
 
-    .run-header:hover { background: rgba(255,255,255,0.03); }
+    .run-header:hover { background: #18181b; }
 
     .run-id {
       font-family: var(--mono);
       font-size: 0.8rem;
-      color: var(--text);
+      color: var(--fg);
       flex: 1;
       overflow: hidden;
       text-overflow: ellipsis;
@@ -310,82 +285,60 @@ export class AppSync extends LitElement {
 
     .run-meta {
       font-family: var(--mono);
-      font-size: 0.62rem;
-      color: var(--muted);
+      font-size: 0.65rem;
+      color: var(--muted-fg);
       white-space: nowrap;
     }
 
     .run-chevron {
-      font-size: 0.9rem;
-      color: var(--muted);
-      transition: transform 0.2s;
+      font-size: 0.85rem;
+      color: var(--muted-fg);
+      transition: transform 0.15s;
       flex-shrink: 0;
     }
 
     .run-chevron.open { transform: rotate(90deg); }
 
+    .run-preview {
+      border-top: 1px solid var(--border);
+      padding: 10px 14px;
+      font-family: var(--mono);
+      font-size: 0.65rem;
+      color: var(--muted-fg);
+      line-height: 1.65;
+      max-height: 110px;
+      overflow-y: auto;
+    }
+
     .run-actions {
+      border-top: 1px solid var(--border);
       display: flex;
       gap: 8px;
-      padding: 0 16px 14px;
-      flex-wrap: wrap;
+      padding: 10px 14px;
     }
 
     .btn-sm {
       font-family: var(--mono);
       font-size: 0.68rem;
-      letter-spacing: 0.06em;
-      text-transform: uppercase;
-      padding: 6px 14px;
-      border-radius: 6px;
+      padding: 5px 12px;
+      border-radius: 5px;
       cursor: pointer;
-      transition: all 0.15s;
       border: 1px solid var(--border);
       background: transparent;
-      color: var(--muted);
+      color: var(--muted-fg);
+      transition: all 0.12s;
     }
 
-    .btn-sm:hover { border-color: var(--accent); color: var(--accent); }
-
-    .btn-sm.danger:hover { border-color: var(--warn); color: var(--warn); }
-
-    .run-preview {
-      padding: 0 16px 14px;
-      font-family: var(--mono);
-      font-size: 0.62rem;
-      color: var(--muted);
-      line-height: 1.6;
-      max-height: 120px;
-      overflow-y: auto;
-      border-top: 1px solid var(--border);
-      padding-top: 10px;
-    }
+    .btn-sm:hover { border-color: #52525b; color: var(--fg); }
+    .btn-sm.danger:hover { border-color: #ef4444; color: #f87171; }
 
     .empty-msg {
       font-family: var(--mono);
-      font-size: 0.78rem;
-      color: var(--muted);
+      font-size: 0.75rem;
+      color: var(--muted-fg);
       text-align: center;
-      padding: 32px 16px;
+      padding: 28px 0;
     }
-
-    .nav-back {
-      font-family: var(--mono);
-      font-size: 0.72rem;
-      letter-spacing: 0.1em;
-      text-transform: uppercase;
-      background: none;
-      border: 1px solid var(--border);
-      color: var(--muted);
-      padding: 9px 18px;
-      border-radius: 6px;
-      cursor: pointer;
-      transition: color 0.2s, border-color 0.2s;
-      text-decoration: none;
-      display: inline-block;
-    }
-
-    .nav-back:hover { color: var(--accent); border-color: var(--accent); }
   `;
 
   render() {
@@ -394,24 +347,24 @@ export class AppSync extends LitElement {
     return html`
       <main>
         <div class="page-header">
-          <div class="logo-icon">
-            <svg viewBox="0 0 24 24"><path d="M12 4V1L8 5l4 4V6c3.31 0 6 2.69 6 6 0 1.01-.25 1.97-.7 2.8l1.46 1.46C19.54 15.03 20 13.57 20 12c0-4.42-3.58-8-8-8zm0 14c-3.31 0-6-2.69-6-6 0-1.01.25-1.97.7-2.8L5.24 7.74C4.46 8.97 4 10.43 4 12c0 4.42 3.58 8 8 8v3l4-4-4-4v3z"/></svg>
-          </div>
+          <a class="back-btn" href="${resolveRouterPath()}">←</a>
           <span class="page-title">Sync Logs</span>
         </div>
 
         <div class="content">
 
           ${!this.connected ? html`
-            <div class="disconnected-notice">
-              <span>Device not connected.</span>
-              <a href="${resolveRouterPath('connect')}">Go to Connect →</a>
+            <div class="alert">
+              <span>Device not connected</span>
+              <a href="${resolveRouterPath('connect')}">Connect →</a>
             </div>
           ` : ''}
 
           <!-- Sync card -->
           <div class="card">
-            <div class="card-title">Device Sync</div>
+            <div class="card-header">
+              <span class="card-title">Device Sync</span>
+            </div>
             <div class="sync-row">
               <button class="btn-sync"
                 ?disabled=${!this.connected || busy}
@@ -430,7 +383,9 @@ export class AppSync extends LitElement {
 
           <!-- Local runs -->
           <div class="card">
-            <div class="card-title">Downloaded Runs (${this.runs.length})</div>
+            <div class="card-header">
+              <span class="card-title">Downloaded Runs (${this.runs.length})</span>
+            </div>
             ${this.runs.length === 0
               ? html`<div class="empty-msg">No runs downloaded yet. Connect to device and press Sync.</div>`
               : html`
@@ -459,8 +414,6 @@ export class AppSync extends LitElement {
               `
             }
           </div>
-
-          <div><a class="nav-back" href="${resolveRouterPath()}">← Back to Home</a></div>
 
         </div>
       </main>

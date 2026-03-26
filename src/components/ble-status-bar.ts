@@ -9,8 +9,8 @@ export class BleStatusBar extends LitElement {
   @state() private connStatus: ConnStatus = bleService.connStatus;
   @state() private liveState: LiveState | null = bleService.liveState;
 
-  private _onStatus  = () => { this.connStatus = bleService.connStatus; };
-  private _onState   = () => { this.liveState  = bleService.liveState; };
+  private _onStatus = () => { this.connStatus = bleService.connStatus; };
+  private _onState  = () => { this.liveState  = bleService.liveState; };
 
   connectedCallback() {
     super.connectedCallback();
@@ -26,135 +26,132 @@ export class BleStatusBar extends LitElement {
 
   static styles = css`
     :host {
-      --bg:      #08090d;
-      --surface: #0b0d14;
-      --border:  #1e2535;
-      --accent:  #00e5ff;
-      --ok:      #00ffa3;
-      --warn:    #ff6b35;
-      --text:    #c8d6ef;
-      --muted:   #4a5568;
-      --mono:    'Share Tech Mono', monospace;
-      --display: 'Oxanium', sans-serif;
-
       display: block;
       position: sticky;
       top: 0;
       z-index: 200;
+      --border:   #27272a;
+      --fg:       #fafafa;
+      --muted-fg: #71717a;
+      --mono: 'Share Tech Mono', monospace;
+      --sans: 'Geist', 'Inter', system-ui, sans-serif;
     }
 
     .bar {
-      background: rgba(8, 9, 13, 0.92);
+      background: rgba(9,9,11,0.88);
       border-bottom: 1px solid var(--border);
-      backdrop-filter: blur(10px);
-      -webkit-backdrop-filter: blur(10px);
-      height: 48px;
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      height: 44px;
       display: flex;
       align-items: center;
       padding: 0 16px;
-      gap: 10px;
+      gap: 8px;
     }
 
-    .status-dot {
-      width: 8px; height: 8px;
+    .conn-dot {
+      width: 7px; height: 7px;
       border-radius: 50%;
       flex-shrink: 0;
     }
 
-    .status-dot.disconnected { background: #d13a30; }
-    .status-dot.connecting   { background: orange; animation: blink 1s infinite; }
-    .status-dot.connected    { background: var(--ok); box-shadow: 0 0 6px rgba(0,255,163,0.6); }
-    .status-dot.failed       { background: #d13a30; }
+    .conn-dot.connected    { background: #22c55e; box-shadow: 0 0 5px #22c55e88; }
+    .conn-dot.disconnected { background: #52525b; }
+    .conn-dot.connecting   { background: #f59e0b; animation: pulse 1s infinite; }
+    .conn-dot.failed       { background: #ef4444; }
 
-    @keyframes blink { 50% { opacity: 0.25; } }
+    @keyframes pulse { 50% { opacity: 0.25; } }
 
-    .status-label {
-      font-family: var(--mono);
-      font-size: 0.68rem;
-      letter-spacing: 0.08em;
-      text-transform: uppercase;
+    .conn-label {
+      font-family: var(--sans);
+      font-size: 0.8125rem;
+      font-weight: 500;
+      color: var(--fg);
       flex-shrink: 0;
     }
 
-    .status-label.disconnected { color: #d13a30; }
-    .status-label.connecting   { color: orange; }
-    .status-label.connected    { color: var(--ok); }
-    .status-label.failed       { color: #d13a30; }
+    .conn-label.disconnected,
+    .conn-label.failed { color: var(--muted-fg); }
 
-    .divider {
+    .sep {
       width: 1px;
-      height: 20px;
+      height: 16px;
       background: var(--border);
       flex-shrink: 0;
+      margin: 0 2px;
     }
 
-    .badges {
+    .metrics {
       display: flex;
       align-items: center;
-      gap: 8px;
+      gap: 12px;
       overflow: hidden;
     }
 
-    .badge {
+    .metric {
       font-family: var(--mono);
-      font-size: 0.65rem;
-      letter-spacing: 0.06em;
-      padding: 3px 8px;
-      border-radius: 12px;
-      border: 1px solid currentColor;
+      font-size: 0.7rem;
+      color: var(--muted-fg);
       white-space: nowrap;
       flex-shrink: 0;
     }
 
-    .badge.state-running { color: var(--ok); }
-    .badge.state-paused  { color: var(--warn); }
-    .badge.state-waiting { color: orange; }
-    .badge.state-idle    { color: var(--muted); }
+    .metric b {
+      color: var(--fg);
+      font-weight: 500;
+    }
 
-    .value {
+    .sampling-badge {
       font-family: var(--mono);
       font-size: 0.65rem;
-      color: var(--text);
+      letter-spacing: 0.05em;
+      padding: 2px 8px;
+      border-radius: 10px;
+      border: 1px solid;
       white-space: nowrap;
       flex-shrink: 0;
     }
 
-    .value span { color: var(--muted); }
+    .sampling-badge.running { color: #22c55e; border-color: rgba(34,197,94,0.3); background: rgba(34,197,94,0.08); }
+    .sampling-badge.paused  { color: #f59e0b; border-color: rgba(245,158,11,0.3); background: rgba(245,158,11,0.08); }
+    .sampling-badge.waiting { color: #3b82f6; border-color: rgba(59,130,246,0.3); background: rgba(59,130,246,0.08); }
+    .sampling-badge.idle    { color: #52525b; border-color: #3f3f46; }
 
     .spacer { flex: 1; }
 
     .btn {
-      font-family: var(--display);
-      font-size: 0.68rem;
-      font-weight: 600;
-      letter-spacing: 0.1em;
-      text-transform: uppercase;
-      padding: 6px 14px;
-      border-radius: 6px;
-      border: none;
+      font-family: var(--sans);
+      font-size: 0.75rem;
+      font-weight: 500;
+      padding: 5px 14px;
+      border-radius: 5px;
       cursor: pointer;
-      transition: opacity 0.2s;
+      transition: opacity 0.15s;
       flex-shrink: 0;
+      white-space: nowrap;
     }
-
-    .btn:hover    { opacity: 0.82; }
-    .btn:disabled { opacity: 0.3; cursor: not-allowed; }
 
     .btn-connect {
-      background: linear-gradient(135deg, #7c3aed, #00e5ff);
-      color: #fff;
+      background: var(--fg);
+      color: #09090b;
+      border: none;
       text-decoration: none;
-      display: inline-block;
+      display: inline-flex;
+      align-items: center;
     }
+
+    .btn-connect:hover { opacity: 0.88; }
 
     .btn-disconnect {
       background: transparent;
-      border: 1px solid var(--warn);
-      color: var(--warn);
+      border: 1px solid var(--border);
+      color: var(--muted-fg);
     }
 
-    @media (max-width: 400px) {
-      .value { display: none; }
+    .btn-disconnect:hover { border-color: #ef4444; color: #f87171; }
+
+    @media (max-width: 420px) {
+      .metric { display: none; }
     }
   `;
 
@@ -164,26 +161,25 @@ export class BleStatusBar extends LitElement {
 
     return html`
       <div class="bar">
-        <span class="status-dot ${this.connStatus}"></span>
-        <span class="status-label ${this.connStatus}">
-          ${this.connStatus === 'connected'    ? 'Connected'
-          : this.connStatus === 'connecting'   ? 'Connecting…'
-          : this.connStatus === 'failed'       ? 'Failed'
-          : 'AirSampler'}
+        <span class="conn-dot ${this.connStatus}"></span>
+        <span class="conn-label ${this.connStatus}">
+          ${this.connStatus === 'connected'  ? 'AirSampler'
+          : this.connStatus === 'connecting' ? 'Connecting…'
+          : this.connStatus === 'failed'     ? 'Failed'
+          : 'Not connected'}
         </span>
 
-        <div class="spacer"></div>
-
         ${connected && s ? html`
-          <div class="badges">
-            <span class="value"><span>RH </span>${s.humidity.toFixed(0)}%</span>
-            <span class="value"><span>T </span>${s.temperature.toFixed(1)}°C</span>
-            <span class="value"><span>Flow </span>${s.flowrate.toFixed(3)} L/s</span>
-            <span class="value"><span>SoC </span>${s.soc.toFixed(1)}%</span>
-            <span class="badge state-${s.samplingState}">${s.samplingState}</span>
+          <div class="sep"></div>
+          <div class="metrics">
+            <span class="metric"><b>${s.soc.toFixed(0)}</b>%</span>
+            <span class="metric"><b>${s.temperature.toFixed(1)}</b>°C</span>
+            <span class="metric"><b>${s.flowrate.toFixed(3)}</b> L/s</span>
           </div>
-          <div class="divider"></div>
+          <span class="sampling-badge ${s.samplingState}">${s.samplingState}</span>
         ` : ''}
+
+        <div class="spacer"></div>
 
         ${connected
           ? html`<button class="btn btn-disconnect" @click=${() => bleService.disconnect()}>Disconnect</button>`
