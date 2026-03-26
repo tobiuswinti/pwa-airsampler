@@ -52,6 +52,30 @@ const routes: Route[] = [
     render: () => html`<app-history></app-history>`,
     load: () => import('./pages/app-history.js'),
   },
+  {
+    hash: '#control',
+    title: 'AirSampler — Start Sampling',
+    render: () => html`<app-control></app-control>`,
+    load: () => import('./pages/app-control.js'),
+  },
+  {
+    hash: '#connect',
+    title: 'AirSampler — Connect',
+    render: () => html`<app-connect></app-connect>`,
+    load: () => import('./pages/app-connect.js'),
+  },
+  {
+    hash: '#sync',
+    title: 'AirSampler — Sync Logs',
+    render: () => html`<app-sync></app-sync>`,
+    load: () => import('./pages/app-sync.js'),
+  },
+  {
+    hash: '#status',
+    title: 'AirSampler — Status',
+    render: () => html`<app-status></app-status>`,
+    load: () => import('./pages/app-status.js'),
+  },
 ];
 
 // ── Hash Router ───────────────────────────────────────────────────────────────

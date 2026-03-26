@@ -1,33 +1,30 @@
-import { LitElement, css } from 'lit';
+import { LitElement, css, html } from 'lit';
 import { customElement } from 'lit/decorators.js';
 
-import './components/header';
+import './components/ble-status-bar';
 import './styles/global.css';
 import { router } from './router';
 
 @customElement('app-index')
 export class AppIndex extends LitElement {
   static styles = css`
-    main {
-      padding-left: 16px;
-      padding-right: 16px;
-      padding-bottom: 16px;
-    }
+    :host { display: block; }
   `;
 
   firstUpdated() {
     router.addEventListener('route-changed', () => {
-      if ("startViewTransition" in document) {
+      if ('startViewTransition' in document) {
         (document as any).startViewTransition(() => this.requestUpdate());
-      }
-      else {
+      } else {
         this.requestUpdate();
       }
     });
   }
 
   render() {
-    // router config can be round in src/router.ts
-    return router.render();
+    return html`
+      <ble-status-bar></ble-status-bar>
+      ${router.render()}
+    `;
   }
 }
