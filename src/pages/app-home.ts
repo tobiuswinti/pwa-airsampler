@@ -2,26 +2,36 @@ import { LitElement, css, html } from 'lit';
 import { state, customElement } from 'lit/decorators.js';
 import { resolveRouterPath } from '../router';
 import { bleService, ConnStatus, LiveState } from '../ble-service';
+import { getDeviceRuns, onDeviceRunsChanged } from '../device-log-store';
 
 @customElement('app-home')
 export class AppHome extends LitElement {
 
   @state() private connStatus: ConnStatus = bleService.connStatus;
   @state() private liveState: LiveState | null = bleService.liveState;
+  @state() private unsyncedCount: number = bleService.unsyncedCount;
+  @state() private pendingUpload: number = getDeviceRuns().filter(r => !r.firebaseId).length;
 
-  private _onStatus = () => { this.connStatus = bleService.connStatus; };
-  private _onState  = () => { this.liveState  = bleService.liveState; };
+  private _onStatus    = () => { this.connStatus    = bleService.connStatus; };
+  private _onState     = () => { this.liveState     = bleService.liveState; };
+  private _onSyncCheck = () => { this.unsyncedCount = bleService.unsyncedCount; };
+  private _onRuns      = () => { this.pendingUpload = getDeviceRuns().filter(r => !r.firebaseId).length; };
+  private _unsubRuns: (() => void) | null = null;
 
   connectedCallback() {
     super.connectedCallback();
-    bleService.addEventListener('status-changed', this._onStatus);
-    bleService.addEventListener('state-changed',  this._onState);
+    bleService.addEventListener('status-changed',     this._onStatus);
+    bleService.addEventListener('state-changed',      this._onState);
+    bleService.addEventListener('sync-check-changed', this._onSyncCheck);
+    this._unsubRuns = onDeviceRunsChanged(this._onRuns);
   }
 
   disconnectedCallback() {
     super.disconnectedCallback();
-    bleService.removeEventListener('status-changed', this._onStatus);
-    bleService.removeEventListener('state-changed',  this._onState);
+    bleService.removeEventListener('status-changed',     this._onStatus);
+    bleService.removeEventListener('state-changed',      this._onState);
+    bleService.removeEventListener('sync-check-changed', this._onSyncCheck);
+    this._unsubRuns?.();
   }
 
   static styles = css`
@@ -173,6 +183,17 @@ export class AppHome extends LitElement {
     .nav-card.legacy .nav-label { font-size: 0.8125rem; }
     .nav-card.legacy .nav-desc  { font-size: 0.7rem; }
 
+    .nav-badge {
+      font-size: 0.6875rem;
+      font-weight: 600;
+      padding: 2px 7px;
+      border-radius: 10px;
+      background: rgba(245,158,11,0.15);
+      border: 1px solid rgba(245,158,11,0.35);
+      color: #f59e0b;
+      flex-shrink: 0;
+    }
+
     .footer-note {
       font-size: 0.72rem;
       color: var(--muted-fg);
@@ -186,6 +207,7 @@ export class AppHome extends LitElement {
     const connected  = this.connStatus === 'connected';
     const bleClass   = connected ? '' : 'disabled';
     const isSampling = connected && this.liveState?.samplingState === 'running';
+    const syncBadge  = this.unsyncedCount + this.pendingUpload;
 
     return html`
       <main>
@@ -265,13 +287,25 @@ export class AppHome extends LitElement {
 
           <span class="group-label">Data</span>
 
-          <a class="nav-card ${bleClass}" href="${resolveRouterPath('sync')}">
+          <a class="nav-card" href="${resolveRouterPath('sync')}">
             <div class="nav-icon" style="background:rgba(255,255,255,0.06);">
               <svg viewBox="0 0 24 24" fill="#a1a1aa"><path d="M12 4V1L8 5l4 4V6c3.31 0 6 2.69 6 6 0 1.01-.25 1.97-.7 2.8l1.46 1.46C19.54 15.03 20 13.57 20 12c0-4.42-3.58-8-8-8zm0 14c-3.31 0-6-2.69-6-6 0-1.01.25-1.97.7-2.8L5.24 7.74C4.46 8.97 4 10.43 4 12c0 4.42 3.58 8 8 8v3l4-4-4-4v3z"/></svg>
             </div>
             <div class="nav-text">
               <span class="nav-label">Sync Logs</span>
               <span class="nav-desc">Download new logs from device</span>
+            </div>
+            ${syncBadge > 0 ? html`<span class="nav-badge">${syncBadge}</span>` : ''}
+            <span class="nav-arrow">›</span>
+          </a>
+
+          <a class="nav-card" href="${resolveRouterPath('sample')}">
+            <div class="nav-icon" style="background:rgba(255,255,255,0.06);">
+              <svg viewBox="0 0 24 24" fill="#a1a1aa"><path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 14H5.17L4 17.17V4h16v12z"/><path d="M6 15h2v-2H6v2zm0-4h2V9H6v2zm0-4h2V5H6v2zm4 8h2v-2h-2v2zm0-4h2V9h-2v2zm0-4h2V5h-2v2zm4 8h2v-2h-2v2zm0-4h2V9h-2v2zm0-4h2V5h-2v2z"/></svg>
+            </div>
+            <div class="nav-text">
+              <span class="nav-label">Sample Lookup</span>
+              <span class="nav-desc">Find a run by scanning its RFID tag</span>
             </div>
             <span class="nav-arrow">›</span>
           </a>

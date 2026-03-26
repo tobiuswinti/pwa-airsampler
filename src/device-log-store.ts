@@ -16,6 +16,8 @@ export interface DeviceRun {
   units:        string[];  // header row 2 – units
   meta:         RunMeta;
   rows:         string[][];  // expanded (carry-forward applied) data rows, parallel to fields
+  firebaseId?:       string;  // Firestore document ID once uploaded, undefined if pending
+  cloudUploadedAt?:  number;  // epoch ms when successfully uploaded to cloud
 }
 
 const STORAGE_KEY = 'airsampler_device_runs_v2';
@@ -56,6 +58,14 @@ export function saveDeviceRun(run: DeviceRun): void {
 
 export function deleteDeviceRun(id: number): void {
   _runs.delete(id);
+  _persist();
+  _listeners.forEach(fn => fn());
+}
+
+export function markRunUploaded(id: number, firebaseId: string, cloudUploadedAt: number): void {
+  const run = _runs.get(id);
+  if (!run) return;
+  _runs.set(id, { ...run, firebaseId, cloudUploadedAt });
   _persist();
   _listeners.forEach(fn => fn());
 }

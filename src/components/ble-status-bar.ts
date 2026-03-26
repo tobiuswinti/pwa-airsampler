@@ -256,13 +256,6 @@ export class BleStatusBar extends LitElement {
           <div class="sep"></div>
         ` : ''}
 
-        ${connected && this.unsyncedCount > 0 ? html`
-          <a class="btn-sync-badge" href="${resolveRouterPath('sync')}">
-            <span class="sync-dot"></span>
-            ${this.unsyncedCount} new run${this.unsyncedCount > 1 ? 's' : ''}
-          </a>
-        ` : ''}
-
         ${connected
           ? html`<button class="btn btn-disconnect" @click=${() => bleService.disconnect()}>Disconnect</button>`
           : html`<a class="btn btn-connect" href="${resolveRouterPath('connect')}">

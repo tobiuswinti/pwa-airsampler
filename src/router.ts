@@ -5,6 +5,7 @@ import './pages/app-home.js';
 // ── Route definition ─────────────────────────────────────────────────────────
 interface Route {
   hash: string;
+  prefix?: boolean;
   title: string;
   render: () => TemplateResult;
   load?: () => Promise<unknown>;
@@ -76,6 +77,19 @@ const routes: Route[] = [
     render: () => html`<app-status></app-status>`,
     load: () => import('./pages/app-status.js'),
   },
+  {
+    hash: '#run/',
+    prefix: true,
+    title: 'AirSampler — Run',
+    render: () => html`<app-run></app-run>`,
+    load: () => import('./pages/app-run.js'),
+  },
+  {
+    hash: '#sample',
+    title: 'AirSampler — Sample Lookup',
+    render: () => html`<app-sample></app-sample>`,
+    load: () => import('./pages/app-sample.js'),
+  },
 ];
 
 // ── Hash Router ───────────────────────────────────────────────────────────────
@@ -90,7 +104,7 @@ class HashRouter extends EventTarget {
 
   private async _navigate() {
     const hash = window.location.hash;
-    const route = routes.find((r) => r.hash === hash) ?? routes[0];
+    const route = routes.find((r) => r.prefix ? hash.startsWith(r.hash) : r.hash === hash) ?? routes[0];
     if (route.load) await route.load();
     this._current = route;
     document.title = route.title;

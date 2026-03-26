@@ -4,6 +4,7 @@ import { customElement } from 'lit/decorators.js';
 import './components/ble-status-bar';
 import './styles/global.css';
 import { router } from './router';
+import './run-upload-service'; // activates auto-upload on online events
 
 @customElement('app-index')
 export class AppIndex extends LitElement {
