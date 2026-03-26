@@ -1,16 +1,15 @@
 // Uploads locally-stored DeviceRuns to Firestore whenever the app is online.
 // Import this module once (from app-index.ts) to activate auto-upload.
 
-import { collection, addDoc, Timestamp } from 'firebase/firestore';
+import { collection, addDoc, getDocs, query, where, Timestamp } from 'firebase/firestore';
 import { db } from './firebase';
-import { DeviceRun, getDeviceRuns, markRunUploaded } from './device-log-store';
+import { DeviceRun, getDeviceRuns, markRunUploaded, markRunUploadError } from './device-log-store';
 
 const COLLECTION = 'device_runs';
 
 // ── Upload a single run ────────────────────────────────────────────────────
 
 export async function uploadRun(run: DeviceRun): Promise<string> {
-  // Serialise rows as CSV strings to keep the Firestore document compact
   const csvRows = run.rows.map(r => r.join(','));
 
   const docRef = await addDoc(collection(db, COLLECTION), {
@@ -40,7 +39,7 @@ export function onUploadProgress(fn: (pending: number, total: number) => void): 
 
 function _notify() {
   const all     = getDeviceRuns();
-  const pending = all.filter(r => !r.firebaseId).length;
+  const pending = all.filter(r => !r.firebaseId && !r.uploadError).length;
   _listeners.forEach(fn => fn(pending, all.length));
 }
 
@@ -49,14 +48,26 @@ export async function uploadPendingRuns(): Promise<void> {
   _uploading = true;
   _notify();
 
-  const pending = getDeviceRuns().filter(r => !r.firebaseId);
+  const pending = getDeviceRuns().filter(r => !r.firebaseId && !r.uploadError);
   for (const run of pending) {
     try {
+      // Check for existing cloud run with the same tagId (skip blank tagIds)
+      if (run.meta.tagId) {
+        const snap = await getDocs(query(
+          collection(db, COLLECTION),
+          where('tagId', '==', run.meta.tagId),
+        ));
+        if (!snap.empty) {
+          markRunUploadError(run.id, 'duplicate');
+          _notify();
+          continue;
+        }
+      }
+
       const firebaseId = await uploadRun(run);
       markRunUploaded(run.id, firebaseId, Date.now());
     } catch (err) {
       console.warn(`[upload] run ${run.id} failed:`, err);
-      // Don't abort — try remaining runs
     }
     _notify();
   }

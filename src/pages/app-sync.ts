@@ -11,7 +11,7 @@ import {
   parseMeta,
   applyCarryForward,
 } from '../device-log-store';
-import { uploadPendingRuns, onUploadProgress, isUploading } from '../run-upload-service';
+import { uploadPendingRuns, onUploadProgress } from '../run-upload-service';
 
 type SyncStatus = 'idle' | 'listing' | 'downloading' | 'done' | 'error';
 
@@ -25,9 +25,6 @@ export class AppSync extends LitElement {
   @state() private syncStatus: SyncStatus = 'idle';
   @state() private syncMsg = '';
   @state() private syncProgress = '';
-
-  @state() private uploadPending = 0;
-  @state() private uploading = false;
 
   private _onStatus    = () => { this.connected = bleService.connStatus === 'connected'; };
   private _onSyncCheck = () => {
@@ -44,15 +41,11 @@ export class AppSync extends LitElement {
     this._unsub   = onDeviceRunsChanged(() => {
       this.runs = getDeviceRuns();
       this._onSyncCheck();
-      this._refreshUploadState();
     });
-    this._unsubUp = onUploadProgress((pending) => {
-      this.uploadPending = pending;
-      this.uploading     = isUploading();
-      this.runs          = getDeviceRuns();
+    this._unsubUp = onUploadProgress(() => {
+      this.runs = getDeviceRuns();
     });
     this._onSyncCheck();
-    this._refreshUploadState();
   }
 
   disconnectedCallback() {
@@ -61,12 +54,6 @@ export class AppSync extends LitElement {
     bleService.removeEventListener('sync-check-changed', this._onSyncCheck);
     this._unsub?.();
     this._unsubUp?.();
-  }
-
-  private _refreshUploadState() {
-    const all          = getDeviceRuns();
-    this.uploadPending = all.filter(r => !r.firebaseId).length;
-    this.uploading     = isUploading();
   }
 
   /* ── Helpers ── */
@@ -197,9 +184,12 @@ export class AppSync extends LitElement {
     const fmtTs         = (ms: number) => new Date(ms).toLocaleString();
     const sampledTip    = run.meta.startTime ? `Sampled: ${fmtTs(run.meta.startTime)}` : 'Sampled';
     const downloadedTip = `Downloaded: ${fmtTs(run.downloadedAt)}`;
-    const uploadedTip   = run.firebaseId
+    const step3Class = run.firebaseId ? 'active' : run.uploadError ? 'error' : 'warn';
+    const uploadedTip = run.firebaseId
       ? (run.cloudUploadedAt ? `Uploaded: ${fmtTs(run.cloudUploadedAt)}` : 'Uploaded to cloud')
-      : 'Not yet uploaded';
+      : run.uploadError === 'duplicate'
+        ? 'Duplicate: tag ID already exists in cloud'
+        : 'Not yet uploaded';
 
     return html`
       <a class="run-item" href="#run/${run.id}">
@@ -221,7 +211,7 @@ export class AppSync extends LitElement {
             </svg>
           </span>
           <span class="step-connector ${run.firebaseId ? 'active' : ''}"></span>
-          <span class="step-btn ${run.firebaseId ? 'active' : 'warn'}" data-tip="${uploadedTip}">
+          <span class="step-btn ${step3Class}" data-tip="${uploadedTip}">
             <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
               <path d="M19.35 10.04A7.49 7.49 0 0012 4C9.11 4 6.6 5.64 5.35 8.04A5.994 5.994 0 000 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96zM14 13v4h-4v-4H7l5-5 5 5h-3z"/>
             </svg>
@@ -494,6 +484,7 @@ export class AppSync extends LitElement {
 
     .step-btn.active { border-color: #22c55e; color: #22c55e; background: rgba(34,197,94,0.06); }
     .step-btn.warn   { border-color: #52525b; color: #52525b; }
+    .step-btn.error  { border-color: #ef4444; color: #ef4444; background: rgba(239,68,68,0.06); }
 
     /* CSS tooltip */
     .step-btn::after {
@@ -622,33 +613,6 @@ export class AppSync extends LitElement {
               ` : ''}
             </div>
 
-            ${this.uploadPending > 0 ? html`
-              <div class="upload-row">
-                <span class="upload-icon">
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor">
-                    <path d="M19.35 10.04A7.49 7.49 0 0012 4C9.11 4 6.6 5.64 5.35 8.04A5.994 5.994 0 000 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96zM14 13v4h-4v-4H7l5-5 5 5h-3z"/>
-                  </svg>
-                </span>
-                ${this.uploading
-                  ? html`<span class="upload-status uploading">${this.uploadPending} run${this.uploadPending > 1 ? 's' : ''} uploading to cloud…</span>`
-                  : html`
-                    <span class="upload-status pending">${this.uploadPending} run${this.uploadPending > 1 ? 's' : ''} pending cloud upload</span>
-                    <button class="btn-upload" @click=${() => uploadPendingRuns()}
-                      ?disabled=${!navigator.onLine}>
-                      ${navigator.onLine ? 'Upload now' : 'Offline'}
-                    </button>
-                  `}
-              </div>
-            ` : this.runs.length > 0 ? html`
-              <div class="upload-row">
-                <span class="upload-icon uploaded">
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor">
-                    <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z"/>
-                  </svg>
-                </span>
-                <span class="upload-status done">All runs uploaded to cloud</span>
-              </div>
-            ` : ''}
           </div>
 
           <!-- Local runs -->

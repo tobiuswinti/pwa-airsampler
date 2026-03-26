@@ -18,6 +18,7 @@ export interface DeviceRun {
   rows:         string[][];  // expanded (carry-forward applied) data rows, parallel to fields
   firebaseId?:       string;  // Firestore document ID once uploaded, undefined if pending
   cloudUploadedAt?:  number;  // epoch ms when successfully uploaded to cloud
+  uploadError?:      string;  // set if upload failed (e.g. 'duplicate')
 }
 
 const STORAGE_KEY = 'airsampler_device_runs_v2';
@@ -66,6 +67,14 @@ export function markRunUploaded(id: number, firebaseId: string, cloudUploadedAt:
   const run = _runs.get(id);
   if (!run) return;
   _runs.set(id, { ...run, firebaseId, cloudUploadedAt });
+  _persist();
+  _listeners.forEach(fn => fn());
+}
+
+export function markRunUploadError(id: number, error: string): void {
+  const run = _runs.get(id);
+  if (!run) return;
+  _runs.set(id, { ...run, uploadError: error });
   _persist();
   _listeners.forEach(fn => fn());
 }

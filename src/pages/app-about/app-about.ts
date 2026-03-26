@@ -172,6 +172,48 @@ export class AppAbout extends LitElement {
 
     .badge-blue  { background: rgba(59,130,246,0.12); border: 1px solid rgba(59,130,246,0.3); color: #60a5fa; }
     .badge-green { background: rgba(34,197,94,0.08);  border: 1px solid rgba(34,197,94,0.3);  color: #22c55e; }
+
+    /* Authors */
+    .author {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 0;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .author:last-child { border-bottom: none; }
+
+    .author-body {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .author-name {
+      font-size: 0.8125rem;
+      font-weight: 500;
+      color: var(--fg);
+    }
+
+    .author-role {
+      font-size: 0.75rem;
+      color: var(--muted-fg);
+    }
+
+    .author-link {
+      font-size: 0.72rem;
+      font-family: var(--mono);
+      color: var(--muted-fg);
+      text-decoration: none;
+      border: 1px solid var(--border);
+      padding: 3px 10px;
+      border-radius: 5px;
+      transition: color 0.15s, border-color 0.15s;
+      flex-shrink: 0;
+    }
+
+    .author-link:hover { color: var(--fg); border-color: #52525b; }
   `;
 
   render() {
@@ -247,6 +289,24 @@ export class AppAbout extends LitElement {
                 </div>
               </div>
 
+            </div>
+          </div>
+
+          <!-- Authors -->
+          <div class="card">
+            <div class="card-title">Authors</div>
+            <div class="author">
+              <div class="author-body">
+                <span class="author-name">Tobias Mäder</span>
+                <span class="author-role">Embedded software · User interface</span>
+              </div>
+            </div>
+            <div class="author">
+              <div class="author-body">
+                <span class="author-name">Nathaniel Walser</span>
+                <span class="author-role">Hardware design</span>
+              </div>
+              <a class="author-link" href="https://www.linkedin.com/in/nathaniel-walser/" target="_blank" rel="noopener">LinkedIn</a>
             </div>
           </div>
 
