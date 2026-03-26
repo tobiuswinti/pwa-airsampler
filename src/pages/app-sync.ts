@@ -9,6 +9,8 @@ import {
   saveDeviceRun,
   deleteDeviceRun,
   onDeviceRunsChanged,
+  parseMeta,
+  applyCarryForward,
 } from '../device-log-store';
 
 type SyncStatus = 'idle' | 'listing' | 'downloading' | 'done' | 'error';
@@ -22,7 +24,7 @@ export class AppSync extends LitElement {
   @state() private syncStatus: SyncStatus = 'idle';
   @state() private syncMsg = '';
   @state() private syncProgress = '';   // e.g. "2 / 5"
-  @state() private expandedId: string | null = null;
+  @state() private expandedId: number | null = null;
 
   private _onStatus = () => { this.connected = bleService.connStatus === 'connected'; };
   private _unsub?: () => void;
@@ -39,6 +41,23 @@ export class AppSync extends LitElement {
     this._unsub?.();
   }
 
+  /* ── Helpers ── */
+
+  /** Extract a JSON object from a response line, or null if not JSON */
+  private _tryJson(line: string): Record<string, unknown> | null {
+    const t = line.trim();
+    if (!t.startsWith('{')) return null;
+    try { return JSON.parse(t); } catch { return null; }
+  }
+
+  /** Check if any line starts with ERROR */
+  private _findError(lines: string[]): string | null {
+    for (const l of lines) {
+      if (l.startsWith('ERROR')) return l;
+    }
+    return null;
+  }
+
   /* ── Sync ── */
   private async _sync() {
     if (this.syncStatus === 'listing' || this.syncStatus === 'downloading') return;
@@ -47,15 +66,25 @@ export class AppSync extends LitElement {
     this.syncProgress = '';
 
     // 1. List all run IDs on the device
+    //    Response: ACK / {"runs":[1,2,3]} / {"le":1} / DONE
     const listLines = await bleService.sendCmd('listRuns');
-    if (!listLines.some(l => l.startsWith('OK'))) {
+
+    const listErr = this._findError(listLines);
+    if (listErr) {
       this.syncStatus = 'error';
-      this.syncMsg = listLines[0] ?? 'listRuns failed';
+      this.syncMsg = listErr;
       return;
     }
 
-    // Lines between ACK/DONE that are not "OK" are run IDs
-    const deviceIds = listLines.filter(l => !l.startsWith('OK'));
+    // Find the {"runs":[...]} JSON line
+    let deviceIds: number[] = [];
+    for (const l of listLines) {
+      const j = this._tryJson(l);
+      if (j && Array.isArray(j['runs'])) {
+        deviceIds = (j['runs'] as unknown[]).map(Number);
+        break;
+      }
+    }
 
     if (deviceIds.length === 0) {
       this.syncStatus = 'done';
@@ -72,18 +101,55 @@ export class AppSync extends LitElement {
     }
 
     // 2. Download each missing run
+    //    getStateLogs -run <N>
+    //    Response: ACK / {"ls":603} / field-line / unit-line / meta-line / rows... / {"le":1} / DONE
     this.syncStatus = 'downloading';
     let done = 0;
     for (const id of toDownload) {
       this.syncProgress = `${done} / ${toDownload.length}`;
-      const logLines = await bleService.sendCmd(`getLog -run ${id}`);
-      if (!logLines.some(l => l.startsWith('OK'))) {
+
+      const logLines = await bleService.sendCmd(`getStateLogs -run ${id}`);
+
+      const logErr = this._findError(logLines);
+      if (logErr) {
         this.syncStatus = 'error';
-        this.syncMsg = `Failed to download run "${id}": ${logLines[0] ?? 'unknown error'}`;
+        this.syncMsg = `Run ${id}: ${logErr}`;
         return;
       }
-      const lines = logLines.filter(l => !l.startsWith('OK'));
-      saveDeviceRun({ id, downloadedAt: Date.now(), lines });
+
+      // sendCmd returns only lines between ACK…DONE.
+      // Strip JSON control lines ({"ls":N}, {"le":1}) — keep plain CSV data lines.
+      const dataLines = logLines.filter(l => {
+        const t = l.trim();
+        return t !== '' && !t.startsWith('{');
+      });
+
+      if (dataLines.length < 3) {
+        this.syncStatus = 'error';
+        this.syncMsg = `Run ${id}: not enough header lines (got ${dataLines.length})`;
+        return;
+      }
+
+      const fields = ['timestamp', ...dataLines[0].split(',')];
+      const units  = ['ms',        ...dataLines[1].split(',')];
+      const meta   = parseMeta(dataLines[2]);
+
+      const rawRows = dataLines.slice(3).map(l => l.split(','));
+      const expanded = applyCarryForward(rawRows);
+      const rows = expanded.map((row, i) => [
+        String(meta.startTime + i * meta.interval),
+        ...row,
+      ]);
+
+      const run: DeviceRun = {
+        id,
+        downloadedAt: Date.now(),
+        fields,
+        units,
+        meta,
+        rows,
+      };
+      saveDeviceRun(run);
       done++;
       this.syncProgress = `${done} / ${toDownload.length}`;
     }
@@ -91,15 +157,20 @@ export class AppSync extends LitElement {
     this.syncStatus = 'done';
     this.syncMsg = `Downloaded ${toDownload.length} new run(s). Total: ${deviceIds.length}.`;
     this.syncProgress = '';
+    // All runs are now local — clear the badge
+    bleService.unsyncedCount = 0;
+    bleService.dispatchEvent(new CustomEvent('sync-check-changed'));
   }
 
   /* ── Download run as CSV ── */
   private _downloadRun(run: DeviceRun) {
-    const blob = new Blob([run.lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
+    const header = [run.fields.join(','), run.units.join(',')];
+    const dataRows = run.rows.map(r => r.join(','));
+    const blob = new Blob([[...header, ...dataRows].join('\n')], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `${run.id}.csv`;
+    a.download = `run_${run.id}.csv`;
     a.click();
     URL.revokeObjectURL(url);
   }
@@ -299,15 +370,30 @@ export class AppSync extends LitElement {
 
     .run-chevron.open { transform: rotate(90deg); }
 
-    .run-preview {
+    .run-detail {
       border-top: 1px solid var(--border);
       padding: 10px 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .run-detail-row {
+      display: flex;
+      gap: 8px;
+      font-size: 0.7rem;
+    }
+
+    .run-detail-key {
       font-family: var(--mono);
-      font-size: 0.65rem;
       color: var(--muted-fg);
-      line-height: 1.65;
-      max-height: 110px;
-      overflow-y: auto;
+      flex-shrink: 0;
+      min-width: 80px;
+    }
+
+    .run-detail-val {
+      font-family: var(--mono);
+      color: var(--fg);
     }
 
     .run-actions {
@@ -390,26 +476,52 @@ export class AppSync extends LitElement {
               ? html`<div class="empty-msg">No runs downloaded yet. Connect to device and press Sync.</div>`
               : html`
                 <div class="runs-list">
-                  ${this.runs.map(run => html`
-                    <div class="run-item">
-                      <div class="run-header"
-                        @click=${() => { this.expandedId = this.expandedId === run.id ? null : run.id; }}>
-                        <span class="run-id">${run.id}</span>
-                        <span class="run-meta">${run.lines.length} lines · ${new Date(run.downloadedAt).toLocaleDateString()}</span>
-                        <span class="run-chevron ${this.expandedId === run.id ? 'open' : ''}">›</span>
+                  ${this.runs.map(run => {
+                    const open = this.expandedId === run.id;
+                    const startDate = run.meta.startTime
+                      ? new Date(run.meta.startTime).toLocaleString()
+                      : '—';
+                    return html`
+                      <div class="run-item">
+                        <div class="run-header"
+                          @click=${() => { this.expandedId = open ? null : run.id; }}>
+                          <span class="run-id">Run #${run.id}</span>
+                          <span class="run-meta">${run.rows.length} rows · ${new Date(run.downloadedAt).toLocaleDateString()}</span>
+                          <span class="run-chevron ${open ? 'open' : ''}">›</span>
+                        </div>
+                        ${open ? html`
+                          <div class="run-detail">
+                            <div class="run-detail-row">
+                              <span class="run-detail-key">Start</span>
+                              <span class="run-detail-val">${startDate}</span>
+                            </div>
+                            <div class="run-detail-row">
+                              <span class="run-detail-key">Interval</span>
+                              <span class="run-detail-val">${run.meta.interval} ms</span>
+                            </div>
+                            ${run.meta.tagId ? html`
+                              <div class="run-detail-row">
+                                <span class="run-detail-key">Tag ID</span>
+                                <span class="run-detail-val">${run.meta.tagId}</span>
+                              </div>` : ''}
+                            ${run.meta.lat ? html`
+                              <div class="run-detail-row">
+                                <span class="run-detail-key">Location</span>
+                                <span class="run-detail-val">${run.meta.lat}, ${run.meta.lon}</span>
+                              </div>` : ''}
+                            <div class="run-detail-row">
+                              <span class="run-detail-key">Fields</span>
+                              <span class="run-detail-val">${run.fields.join(', ')}</span>
+                            </div>
+                          </div>
+                          <div class="run-actions">
+                            <button class="btn-sm" @click=${() => this._downloadRun(run)}>Download CSV</button>
+                            <button class="btn-sm danger" @click=${() => deleteDeviceRun(run.id)}>Delete</button>
+                          </div>
+                        ` : ''}
                       </div>
-                      ${this.expandedId === run.id ? html`
-                        <div class="run-preview">
-                          ${run.lines.slice(0, 20).map(l => html`${l}<br>`)}
-                          ${run.lines.length > 20 ? html`… (${run.lines.length - 20} more lines)` : ''}
-                        </div>
-                        <div class="run-actions">
-                          <button class="btn-sm" @click=${() => this._downloadRun(run)}>Download CSV</button>
-                          <button class="btn-sm danger" @click=${() => deleteDeviceRun(run.id)}>Delete</button>
-                        </div>
-                      ` : ''}
-                    </div>
-                  `)}
+                    `;
+                  })}
                 </div>
               `
             }

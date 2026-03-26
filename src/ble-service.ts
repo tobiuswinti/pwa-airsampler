@@ -1,6 +1,8 @@
 // Shared BLE singleton — persists across page navigation
 // All pages that need BLE communicate through this service.
 
+import { hasDeviceRun } from './device-log-store';
+
 // ── UUIDs ──────────────────────────────────────────────────────────────────
 const DEVICE_NAME  = 'AirSampler';
 const SERVICE_UUID = '6e400001-b5a3-f393-e0a9-e50e24dcca9e';
@@ -45,6 +47,7 @@ class BleService extends EventTarget {
   connStatus: ConnStatus = 'disconnected';
   liveState: LiveState | null = null;
   sysLog: string[] = [];
+  unsyncedCount: number = 0;
 
   private bleDevice:  BluetoothDevice | null = null;
   private bleService: BluetoothRemoteGATTService | null = null;
@@ -102,7 +105,7 @@ class BleService extends EventTarget {
       await stateChar.startNotifications();
 
       this._setStatus('connected');
-      this.sendCmd(`setTime -ts ${Math.floor(Date.now() / 1000)}`);
+      this._initAfterConnect();
     } catch (err: any) {
       console.error('BLE connect failed:', err);
       this._setStatus('failed');
@@ -114,6 +117,7 @@ class BleService extends EventTarget {
     if (this.bleDevice?.gatt?.connected) this.bleDevice.gatt.disconnect();
     this.bleDevice = null;
     this.liveState = null;
+    this.unsyncedCount = 0;
     this._setStatus('disconnected');
   }
 
@@ -126,6 +130,27 @@ class BleService extends EventTarget {
   }
 
   // ── Internals ─────────────────────────────────────────────────────────────
+
+  private async _initAfterConnect() {
+    await this.sendCmd(`setTime -ts ${Math.floor(Date.now() / 1000)}`);
+    // Check for unsynced runs after setTime completes
+    try {
+      const lines = await this.sendCmd('listRuns');
+      for (const l of lines) {
+        const t = l.trim();
+        if (!t.startsWith('{')) continue;
+        try {
+          const j = JSON.parse(t);
+          if (Array.isArray(j['runs'])) {
+            const ids: number[] = (j['runs'] as unknown[]).map(Number);
+            this.unsyncedCount = ids.filter(id => !hasDeviceRun(id)).length;
+            this.dispatchEvent(new CustomEvent('sync-check-changed'));
+          }
+        } catch { /* ignore */ }
+      }
+    } catch { /* ignore */ }
+  }
+
   private _setStatus(s: ConnStatus) {
     this.connStatus = s;
     this.dispatchEvent(new CustomEvent('status-changed'));

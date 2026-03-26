@@ -8,20 +8,24 @@ export class BleStatusBar extends LitElement {
 
   @state() private connStatus: ConnStatus = bleService.connStatus;
   @state() private liveState: LiveState | null = bleService.liveState;
+  @state() private unsyncedCount: number = bleService.unsyncedCount;
 
-  private _onStatus = () => { this.connStatus = bleService.connStatus; };
-  private _onState  = () => { this.liveState  = bleService.liveState; };
+  private _onStatus    = () => { this.connStatus    = bleService.connStatus; };
+  private _onState     = () => { this.liveState     = bleService.liveState; };
+  private _onSyncCheck = () => { this.unsyncedCount = bleService.unsyncedCount; };
 
   connectedCallback() {
     super.connectedCallback();
-    bleService.addEventListener('status-changed', this._onStatus);
-    bleService.addEventListener('state-changed',  this._onState);
+    bleService.addEventListener('status-changed',    this._onStatus);
+    bleService.addEventListener('state-changed',     this._onState);
+    bleService.addEventListener('sync-check-changed', this._onSyncCheck);
   }
 
   disconnectedCallback() {
     super.disconnectedCallback();
-    bleService.removeEventListener('status-changed', this._onStatus);
-    bleService.removeEventListener('state-changed',  this._onState);
+    bleService.removeEventListener('status-changed',    this._onStatus);
+    bleService.removeEventListener('state-changed',     this._onState);
+    bleService.removeEventListener('sync-check-changed', this._onSyncCheck);
   }
 
   static styles = css`
@@ -89,8 +93,8 @@ export class BleStatusBar extends LitElement {
     }
 
     .metric {
-      font-family: var(--mono);
-      font-size: 0.7rem;
+      font-family: var(--sans);
+      font-size: 0.8125rem;
       color: var(--muted-fg);
       white-space: nowrap;
       flex-shrink: 0;
@@ -102,8 +106,8 @@ export class BleStatusBar extends LitElement {
     }
 
     .sampling-badge {
-      font-family: var(--mono);
-      font-size: 0.65rem;
+      font-family: var(--sans);
+      font-size: 0.75rem;
       letter-spacing: 0.05em;
       padding: 2px 8px;
       border-radius: 10px;
@@ -150,10 +154,77 @@ export class BleStatusBar extends LitElement {
 
     .btn-disconnect:hover { border-color: #ef4444; color: #f87171; }
 
+    .btn-sync-badge {
+      font-family: var(--sans);
+      font-size: 0.75rem;
+      font-weight: 500;
+      padding: 5px 12px;
+      border-radius: 5px;
+      cursor: pointer;
+      transition: opacity 0.15s;
+      flex-shrink: 0;
+      white-space: nowrap;
+      background: transparent;
+      border: 1px solid rgba(245,158,11,0.4);
+      color: #f59e0b;
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+    }
+
+    .btn-sync-badge:hover { background: rgba(245,158,11,0.08); border-color: rgba(245,158,11,0.7); }
+
+    .sync-dot {
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      background: #f59e0b;
+      flex-shrink: 0;
+    }
+
+    .battery {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      flex-shrink: 0;
+    }
+
+    .battery-icon {
+      display: block;
+    }
+
+    .battery-pct {
+      font-family: var(--sans);
+      font-size: 0.8125rem;
+      font-weight: 500;
+      color: var(--fg);
+    }
+
     @media (max-width: 420px) {
       .metric { display: none; }
     }
   `;
+
+  private _batteryColor(soc: number): string {
+    if (soc > 50) return '#22c55e';
+    if (soc > 20) return '#f59e0b';
+    return '#ef4444';
+  }
+
+  private _batteryIcon(soc: number) {
+    const color = this._batteryColor(soc);
+    const fillW = Math.round((soc / 100) * 16); // max inner fill width = 16px
+    return html`
+      <svg class="battery-icon" width="24" height="12" viewBox="0 0 24 12" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <!-- body outline -->
+        <rect x="0.5" y="0.5" width="20" height="11" rx="2.5" stroke="#52525b" stroke-width="1"/>
+        <!-- nub -->
+        <rect x="21" y="3.5" width="2.5" height="5" rx="1" fill="#52525b"/>
+        <!-- fill -->
+        <rect x="2" y="2" width="${fillW}" height="8" rx="1.5" fill="${color}"/>
+      </svg>
+    `;
+  }
 
   render() {
     const connected = this.connStatus === 'connected';
@@ -169,17 +240,28 @@ export class BleStatusBar extends LitElement {
           : 'Not connected'}
         </span>
 
+        <div class="spacer"></div>
+
         ${connected && s ? html`
-          <div class="sep"></div>
           <div class="metrics">
-            <span class="metric"><b>${s.soc.toFixed(0)}</b>%</span>
+            <span class="battery">
+              ${this._batteryIcon(s.soc)}
+              <span class="battery-pct" style="color:${this._batteryColor(s.soc)}">${s.soc.toFixed(0)}%</span>
+            </span>
             <span class="metric"><b>${s.temperature.toFixed(1)}</b>°C</span>
+            <span class="metric"><b>${s.humidity.toFixed(0)}</b>%RH</span>
             <span class="metric"><b>${s.flowrate.toFixed(3)}</b> L/s</span>
           </div>
           <span class="sampling-badge ${s.samplingState}">${s.samplingState}</span>
+          <div class="sep"></div>
         ` : ''}
 
-        <div class="spacer"></div>
+        ${connected && this.unsyncedCount > 0 ? html`
+          <a class="btn-sync-badge" href="${resolveRouterPath('sync')}">
+            <span class="sync-dot"></span>
+            ${this.unsyncedCount} new run${this.unsyncedCount > 1 ? 's' : ''}
+          </a>
+        ` : ''}
 
         ${connected
           ? html`<button class="btn btn-disconnect" @click=${() => bleService.disconnect()}>Disconnect</button>`
