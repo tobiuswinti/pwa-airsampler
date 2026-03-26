@@ -25,7 +25,6 @@ export class AppSync extends LitElement {
   @state() private syncStatus: SyncStatus = 'idle';
   @state() private syncMsg = '';
   @state() private syncProgress = '';
-  @state() private expandedId: number | null = null;
 
   @state() private uploadPending = 0;
   @state() private uploading = false;
@@ -184,66 +183,42 @@ export class AppSync extends LitElement {
 
   /* ── Render a single run item ── */
   private _renderRun(run: DeviceRun) {
-    const open          = this.expandedId === run.id;
     const fmtTs         = (ms: number) => new Date(ms).toLocaleString();
     const sampledTip    = run.meta.startTime ? `Sampled: ${fmtTs(run.meta.startTime)}` : 'Sampled';
     const downloadedTip = `Downloaded: ${fmtTs(run.downloadedAt)}`;
-    const uploadedTip   = run.cloudUploadedAt ? `Uploaded: ${fmtTs(run.cloudUploadedAt)}` : 'Not yet uploaded';
+    const uploadedTip   = run.firebaseId
+      ? (run.cloudUploadedAt ? `Uploaded: ${fmtTs(run.cloudUploadedAt)}` : 'Uploaded to cloud')
+      : 'Not yet uploaded';
 
     return html`
-      <div class="run-item">
-        <div class="run-header" @click=${() => { this.expandedId = open ? null : run.id; }}>
-          <div class="run-info">
-            <span class="run-name">${run.meta?.tagId || `Run #${run.id}`}</span>
-            <span class="run-date">${run.meta.startTime ? new Date(run.meta.startTime).toLocaleDateString() : '—'}</span>
-          </div>
-
-          <div class="run-steps">
-            <span class="step-btn done" data-tip="${sampledTip}">
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
-                <path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-7 14l-5-5 1.41-1.41L12 14.17l7.59-7.59L21 8l-9 9z"/>
-              </svg>
-            </span>
-            <span class="step-connector done"></span>
-            <span class="step-btn done" data-tip="${downloadedTip}">
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
-                <path d="M17 12h-5V7h-2v5H5l7 7 7-7zm-7 9v2h10v-2H10z"/>
-              </svg>
-            </span>
-            <span class="step-connector ${run.firebaseId ? 'done' : ''}"></span>
-            <span class="step-btn ${run.firebaseId ? 'active' : 'warn'}" data-tip="${uploadedTip}">
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
-                <path d="M19.35 10.04A7.49 7.49 0 0012 4C9.11 4 6.6 5.64 5.35 8.04A5.994 5.994 0 000 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96zM14 13v4h-4v-4H7l5-5 5 5h-3z"/>
-              </svg>
-            </span>
-          </div>
-
-          <span class="run-chevron ${open ? 'open' : ''}">›</span>
+      <a class="run-item" href="#run/${run.id}">
+        <div class="run-info">
+          <span class="run-name">${run.meta?.tagId || `Run #${run.id}`}</span>
+          <span class="run-date">${run.meta.startTime ? new Date(run.meta.startTime).toLocaleDateString() : '—'}</span>
         </div>
 
-        ${open ? html`
-          <div class="run-detail">
-            <div class="run-detail-row">
-              <span class="run-detail-key">Interval</span>
-              <span class="run-detail-val">${run.meta.interval} ms</span>
-            </div>
-            ${run.meta.lat ? html`
-              <div class="run-detail-row">
-                <span class="run-detail-key">Location</span>
-                <span class="run-detail-val">${run.meta.lat}, ${run.meta.lon}</span>
-              </div>` : ''}
-            <div class="run-detail-row">
-              <span class="run-detail-key">Fields</span>
-              <span class="run-detail-val">${run.fields.filter(f => f !== 'timestamp').join(', ')}</span>
-            </div>
-          </div>
-          <div class="run-actions">
-            <a class="btn-sm" href="#run/${run.id}">View</a>
-            <button class="btn-sm" @click=${() => this._downloadRun(run)}>Download CSV</button>
-            <button class="btn-sm danger" @click=${() => deleteDeviceRun(run.id)}>Delete</button>
-          </div>
-        ` : ''}
-      </div>
+        <div class="run-steps">
+          <span class="step-btn active" data-tip="${sampledTip}">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-7 14l-5-5 1.41-1.41L12 14.17l7.59-7.59L21 8l-9 9z"/>
+            </svg>
+          </span>
+          <span class="step-connector active"></span>
+          <span class="step-btn active" data-tip="${downloadedTip}">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M17 12h-5V7h-2v5H5l7 7 7-7zm-7 9v2h10v-2H10z"/>
+            </svg>
+          </span>
+          <span class="step-connector ${run.firebaseId ? 'active' : ''}"></span>
+          <span class="step-btn ${run.firebaseId ? 'active' : 'warn'}" data-tip="${uploadedTip}">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M19.35 10.04A7.49 7.49 0 0012 4C9.11 4 6.6 5.64 5.35 8.04A5.994 5.994 0 000 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96zM14 13v4h-4v-4H7l5-5 5 5h-3z"/>
+            </svg>
+          </span>
+        </div>
+
+        <span class="run-arrow">›</span>
+      </a>
     `;
   }
 
@@ -413,23 +388,20 @@ export class AppSync extends LitElement {
     }
 
     .run-item {
-      border: 1px solid var(--border);
-      border-radius: 6px;
-      position: relative;
-    }
-
-    .run-header {
       display: flex;
       align-items: center;
       gap: 10px;
       padding: 12px 14px;
-      cursor: pointer;
-      user-select: none;
-      transition: background 0.12s;
+      border: 1px solid var(--border);
       border-radius: 6px;
+      text-decoration: none;
+      color: var(--fg);
+      cursor: pointer;
+      transition: background 0.12s, border-color 0.12s;
+      position: relative;
     }
 
-    .run-header:hover { background: #18181b; }
+    .run-item:hover { background: #18181b; border-color: #3f3f46; }
 
     .run-info {
       flex: 1;
@@ -470,7 +442,7 @@ export class AppSync extends LitElement {
       flex-shrink: 0;
     }
 
-    .step-connector.done { background: #3f3f46; }
+    .step-connector.active { background: #22c55e; }
 
     .step-btn {
       position: relative;
@@ -486,7 +458,6 @@ export class AppSync extends LitElement {
       color: #3f3f46;
     }
 
-    .step-btn.done   { border-color: #3f3f46; color: #71717a; }
     .step-btn.active { border-color: #22c55e; color: #22c55e; background: rgba(34,197,94,0.06); }
     .step-btn.warn   { border-color: #52525b; color: #52525b; }
 
@@ -513,66 +484,15 @@ export class AppSync extends LitElement {
 
     .step-btn:hover::after { opacity: 1; }
 
-    .run-chevron {
+    .run-arrow {
       font-size: 0.85rem;
       color: var(--muted-fg);
-      transition: transform 0.15s;
       flex-shrink: 0;
       margin-left: 4px;
+      transition: transform 0.15s;
     }
 
-    .run-chevron.open { transform: rotate(90deg); }
-
-    .run-detail {
-      border-top: 1px solid var(--border);
-      padding: 10px 14px;
-      display: flex;
-      flex-direction: column;
-      gap: 6px;
-    }
-
-    .run-detail-row {
-      display: flex;
-      gap: 8px;
-      font-size: 0.7rem;
-    }
-
-    .run-detail-key {
-      font-family: var(--mono);
-      color: var(--muted-fg);
-      flex-shrink: 0;
-      min-width: 80px;
-    }
-
-    .run-detail-val {
-      font-family: var(--mono);
-      color: var(--fg);
-    }
-
-    .run-actions {
-      border-top: 1px solid var(--border);
-      display: flex;
-      gap: 8px;
-      padding: 10px 14px;
-    }
-
-    .btn-sm {
-      font-family: var(--mono);
-      font-size: 0.68rem;
-      padding: 5px 12px;
-      border-radius: 5px;
-      cursor: pointer;
-      border: 1px solid var(--border);
-      background: transparent;
-      color: var(--muted-fg);
-      transition: all 0.12s;
-      text-decoration: none;
-      display: inline-flex;
-      align-items: center;
-    }
-
-    .btn-sm:hover { border-color: #52525b; color: var(--fg); }
-    .btn-sm.danger:hover { border-color: #ef4444; color: #f87171; }
+    .run-item:hover .run-arrow { transform: translateX(2px); }
 
     /* ── Upload status ── */
     .upload-row {
