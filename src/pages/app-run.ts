@@ -235,13 +235,79 @@ export class AppRun extends LitElement {
     if (this.run) {
       this._buildAndDrawCharts();
       this._bindHoverListeners();
+      this._drawEnvSparks();
     }
   }
 
+  private _drawEnvSparks() {
+    const run = this.run!;
+    const sparks: [string, string, string][] = [
+      ['spark-temperature', 'temperature', '#f97316'],
+      ['spark-humidity',    'humidity',    '#06b6d4'],
+      ['spark-pressure',    'pressure',    '#6366f1'],
+    ];
+    for (const [id, field, color] of sparks) {
+      const idx = run.fields.indexOf(field);
+      if (idx < 0) continue;
+      const vals: number[] = [];
+      for (const row of run.rows) {
+        const v = Number(row[idx]);
+        if (isFinite(v)) vals.push(v);
+      }
+      if (vals.length >= 2) this._drawSpark(id, vals, color);
+    }
+  }
+
+  private _drawSpark(id: string, vals: number[], color: string) {
+    const canvas = this.shadowRoot?.querySelector<HTMLCanvasElement>(`#${id}`);
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    const dpr  = window.devicePixelRatio || 1;
+    const rect = canvas.getBoundingClientRect();
+    if (!rect.width) return;
+    canvas.width  = rect.width  * dpr;
+    canvas.height = rect.height * dpr;
+    ctx.scale(dpr, dpr);
+    const W = rect.width, H = rect.height;
+    let min = Infinity, max = -Infinity;
+    for (const v of vals) { min = Math.min(min, v); max = Math.max(max, v); }
+    if (min === max) { min -= 0.5; max += 0.5; }
+    const pad = (max - min) * 0.15;
+    min -= pad; max += pad;
+    const xStep = W / Math.max(vals.length - 1, 1);
+    const toY   = (v: number) => H * (1 - (v - min) / (max - min));
+    const grad  = ctx.createLinearGradient(0, 0, 0, H);
+    grad.addColorStop(0, color + '28'); grad.addColorStop(1, color + '00');
+    ctx.beginPath(); ctx.moveTo(0, H);
+    for (let i = 0; i < vals.length; i++) ctx.lineTo(i * xStep, toY(vals[i]));
+    ctx.lineTo((vals.length - 1) * xStep, H); ctx.closePath();
+    ctx.fillStyle = grad; ctx.fill();
+    ctx.strokeStyle = color; ctx.lineWidth = 1.5;
+    ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(0, toY(vals[0]));
+    for (let i = 1; i < vals.length; i++) ctx.lineTo(i * xStep, toY(vals[i]));
+    ctx.stroke();
+  }
+
   private _duration(): number {
-    const run = this.run!; const tsIdx = run.fields.indexOf('timestamp');
-    if (tsIdx < 0 || run.rows.length < 2) return (run.rows.length - 1) * run.meta.interval;
-    return Number(run.rows[run.rows.length - 1][tsIdx]) - Number(run.rows[0][tsIdx]);
+    const run = this.run!;
+    // elapsedS column (device-reported seconds) is the most accurate source
+    const elIdx = run.fields.indexOf('elapsedS');
+    if (elIdx >= 0) {
+      for (let i = run.rows.length - 1; i >= 0; i--) {
+        const v = Number(run.rows[i][elIdx]);
+        if (isFinite(v) && v > 0) return v * 1000; // s → ms
+      }
+    }
+    // Fallback: timestamp column delta (only reliable if timestamps are in ms)
+    const tsIdx = run.fields.indexOf('timestamp');
+    if (tsIdx >= 0 && run.rows.length >= 2) {
+      const d = Number(run.rows[run.rows.length - 1][tsIdx]) - Number(run.rows[0][tsIdx]);
+      if (d > 5000) return d; // sanity: must be > 5 s to avoid the interval-unit bug
+    }
+    // Last resort: row count × interval (interval stored in seconds by device)
+    return (run.rows.length - 1) * run.meta.interval * 1000;
   }
 
   // ── Chart building ────────────────────────────────────────────────────
@@ -728,6 +794,12 @@ export class AppRun extends LitElement {
       color: var(--muted-fg);
     }
 
+    .key-stat-inline {
+      display: flex;
+      align-items: baseline;
+      gap: 4px;
+    }
+
     .key-stat-value {
       font-family: var(--mono);
       font-size: 1.125rem;
@@ -735,9 +807,9 @@ export class AppRun extends LitElement {
       letter-spacing: -0.01em;
     }
 
-    .key-stat-sub {
+    .key-stat-unit {
       font-family: var(--mono);
-      font-size: 0.65rem;
+      font-size: 0.72rem;
       color: var(--muted-fg);
     }
 
@@ -746,6 +818,13 @@ export class AppRun extends LitElement {
       font-size: 0.6rem;
       color: var(--muted-fg);
       letter-spacing: 0.01em;
+    }
+
+    canvas.stat-spark {
+      width: 100%;
+      height: 28px;
+      display: block;
+      margin-top: 6px;
     }
 
     /* ── Upload badge ── */
@@ -941,7 +1020,7 @@ export class AppRun extends LitElement {
 
     // Key stats
     const pressureConvert = (v: number) => v / 100_000;
-    const flowSpAvg  = avgVal(run, 'flowrateSP');
+    const flowSpMax  = maxVal(run, 'flowrateSP');
     const tempAvg    = avgVal(run, 'temperature');
     const tempMin    = minVal(run, 'temperature');
     const tempMax    = maxVal(run, 'temperature');
@@ -995,7 +1074,7 @@ export class AppRun extends LitElement {
               <div class="hero-meta">
                 ${run.meta.startTime ? html`<span>${new Date(run.meta.startTime).toLocaleString()}</span>` : ''}
                 <span>⏱ ${fmtElapsed(duration)}</span>
-                <span>${run.rows.length} datapoints · ${run.meta.interval}ms interval</span>
+                <span>${run.rows.length} datapoints · ${(run.meta.interval * 1000).toFixed(0)}ms interval</span>
               </div>
             </div>
             <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">
@@ -1009,11 +1088,13 @@ export class AppRun extends LitElement {
           </div>
 
           <!-- Key stats: flow setpoint (wide) -->
-          ${flowSpAvg !== null ? html`
+          ${flowSpMax !== null ? html`
             <div class="key-stat-wide">
               <span class="key-stat-label">Flow Setpoint</span>
-              <span class="key-stat-value" style="color:#f59e0b">${flowSpAvg.toFixed(3)}</span>
-              <span class="key-stat-sub">L/s</span>
+              <div class="key-stat-inline">
+                <span class="key-stat-value" style="color:#f59e0b">${flowSpMax.toFixed(3)}</span>
+                <span class="key-stat-unit">L/s</span>
+              </div>
             </div>` : ''}
 
           <!-- Key stats: env 3-column -->
@@ -1022,26 +1103,35 @@ export class AppRun extends LitElement {
               ${tempAvg !== null ? html`
                 <div class="key-stat">
                   <span class="key-stat-label">Temperature</span>
-                  <span class="key-stat-value" style="color:#f97316">${tempAvg.toFixed(1)}</span>
+                  <div class="key-stat-inline">
+                    <span class="key-stat-value" style="color:#f97316">${tempAvg.toFixed(1)}</span>
+                    <span class="key-stat-unit">°C</span>
+                  </div>
                   ${(tempMin !== null && tempMax !== null) ? html`
-                    <span class="key-stat-range">${tempMin.toFixed(1)} — ${tempMax.toFixed(1)}</span>` : ''}
-                  <span class="key-stat-sub">°C</span>
+                    <span class="key-stat-range">${tempMin.toFixed(1)} — ${tempMax.toFixed(1)} °C</span>` : ''}
+                  <canvas class="stat-spark" id="spark-temperature"></canvas>
                 </div>` : ''}
               ${humAvg !== null ? html`
                 <div class="key-stat">
                   <span class="key-stat-label">Humidity</span>
-                  <span class="key-stat-value" style="color:#06b6d4">${humAvg.toFixed(1)}</span>
+                  <div class="key-stat-inline">
+                    <span class="key-stat-value" style="color:#06b6d4">${humAvg.toFixed(1)}</span>
+                    <span class="key-stat-unit">%RH</span>
+                  </div>
                   ${(humMin !== null && humMax !== null) ? html`
-                    <span class="key-stat-range">${humMin.toFixed(1)} — ${humMax.toFixed(1)}</span>` : ''}
-                  <span class="key-stat-sub">%RH</span>
+                    <span class="key-stat-range">${humMin.toFixed(1)} — ${humMax.toFixed(1)} %RH</span>` : ''}
+                  <canvas class="stat-spark" id="spark-humidity"></canvas>
                 </div>` : ''}
               ${presAvg !== null ? html`
                 <div class="key-stat">
                   <span class="key-stat-label">Pressure</span>
-                  <span class="key-stat-value" style="color:#6366f1">${presAvg.toFixed(4)}</span>
+                  <div class="key-stat-inline">
+                    <span class="key-stat-value" style="color:#6366f1">${presAvg.toFixed(4)}</span>
+                    <span class="key-stat-unit">bar</span>
+                  </div>
                   ${(presMin !== null && presMax !== null) ? html`
-                    <span class="key-stat-range">${presMin.toFixed(4)} — ${presMax.toFixed(4)}</span>` : ''}
-                  <span class="key-stat-sub">bar</span>
+                    <span class="key-stat-range">${presMin.toFixed(4)} — ${presMax.toFixed(4)} bar</span>` : ''}
+                  <canvas class="stat-spark" id="spark-pressure"></canvas>
                 </div>` : ''}
             </div>` : ''}
 
@@ -1112,7 +1202,7 @@ export class AppRun extends LitElement {
             </div>
             <div class="info-row">
               <span class="info-label">Datapoints</span>
-              <span class="info-value">${run.rows.length} × ${run.meta.interval}ms</span>
+              <span class="info-value">${run.rows.length} × ${(run.meta.interval * 1000).toFixed(0)}ms</span>
             </div>
             ${run.meta.tagId ? html`
               <div class="info-row">

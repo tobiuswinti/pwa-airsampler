@@ -54,6 +54,12 @@ const routes: Route[] = [
     load: () => import('./pages/app-sync.js'),
   },
   {
+    hash: '#admin',
+    title: 'AirSampler — Admin',
+    render: () => html`<app-admin></app-admin>`,
+    load: () => import('./pages/app-admin.js'),
+  },
+  {
     hash: '#status',
     title: 'AirSampler — Status',
     render: () => html`<app-status></app-status>`,

@@ -7,6 +7,7 @@ export interface RunMeta {
   lat:       string;
   lon:       string;
   states:    string;
+  runId?:    string;   // UUID assigned by device (stable across reboots)
 }
 
 export interface DeviceRun {
@@ -18,7 +19,7 @@ export interface DeviceRun {
   rows:         string[][];  // expanded (carry-forward applied) data rows, parallel to fields
   firebaseId?:       string;  // Firestore document ID once uploaded, undefined if pending
   cloudUploadedAt?:  number;  // epoch ms when successfully uploaded to cloud
-  uploadError?:      string;  // set if upload failed (e.g. 'duplicate')
+  uploadError?:      string;  // set if upload failed
 }
 
 const STORAGE_KEY = 'airsampler_device_runs_v2';
@@ -49,6 +50,22 @@ export function getDeviceRuns(): DeviceRun[] {
 
 export function hasDeviceRun(id: number): boolean {
   return _runs.has(id);
+}
+
+export function hasDeviceRunByRunId(runId: string): boolean {
+  if (!runId) return false;
+  for (const run of _runs.values()) {
+    if (run.meta?.runId === runId) return true;
+  }
+  return false;
+}
+
+export function getDeviceRunByRunId(runId: string): DeviceRun | undefined {
+  if (!runId) return undefined;
+  for (const run of _runs.values()) {
+    if (run.meta?.runId === runId) return run;
+  }
+  return undefined;
 }
 
 export function saveDeviceRun(run: DeviceRun): void {
@@ -97,7 +114,7 @@ export function parseMeta(metaLine: string): RunMeta {
   // Device emits startTime in Unix seconds; normalise to ms for JS Date compatibility.
   const rawStart = Number(kv['startTime'] ?? 0);
   const startTime = rawStart < 1e12 ? rawStart * 1000 : rawStart;
-  return {
+  const result: RunMeta = {
     startTime,
     interval:  Number(kv['interval']  ?? 1000),
     tagId:     kv['tagId']  ?? '',
@@ -105,6 +122,8 @@ export function parseMeta(metaLine: string): RunMeta {
     lon:       kv['lon']    ?? '',
     states:    kv['states'] ?? '',
   };
+  if (kv['runId']) result.runId = kv['runId'];
+  return result;
 }
 
 /** Apply carry-forward encoding: empty cell → reuse value from previous row */

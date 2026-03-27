@@ -1,7 +1,7 @@
 // Shared BLE singleton — persists across page navigation
 // All pages that need BLE communicate through this service.
 
-import { hasDeviceRun } from './device-log-store';
+import { hasDeviceRunByRunId } from './device-log-store';
 
 // ── UUIDs ──────────────────────────────────────────────────────────────────
 const DEVICE_NAME  = 'AirSampler';
@@ -49,7 +49,7 @@ class BleService extends EventTarget {
   liveState: LiveState | null = null;
   sysLog: string[] = [];
   unsyncedCount: number = 0;
-  deviceRunIds: number[] = [];
+  deviceRuns: Array<{idx: number; runId: string; tagId: string; startTime: number}> = [];
 
   private bleDevice:  BluetoothDevice | null = null;
   private bleService: BluetoothRemoteGATTService | null = null;
@@ -129,7 +129,7 @@ class BleService extends EventTarget {
     this.bleDevice    = null;
     this.liveState    = null;
     this.unsyncedCount = 0;
-    this.deviceRunIds  = [];
+    this.deviceRuns    = [];
     this._prevSamplingState = null;
     this._setStatus('disconnected');
   }
@@ -144,43 +144,48 @@ class BleService extends EventTarget {
 
   // ── Internals ─────────────────────────────────────────────────────────────
 
+  private _parseRunList(lines: string[]): Array<{idx: number; runId: string; tagId: string; startTime: number}> {
+    const runs: Array<{idx: number; runId: string; tagId: string; startTime: number}> = [];
+    for (const l of lines) {
+      const t = l.trim();
+      if (!t.startsWith('{')) continue;
+      try {
+        const j = JSON.parse(t);
+        if (j['run']) {
+          const r = j['run'] as Record<string, unknown>;
+          runs.push({
+            idx:       Number(r['idx']       ?? 0),
+            runId:     String(r['runId']      ?? ''),
+            tagId:     String(r['tagId']      ?? ''),
+            startTime: Number(r['startTime']  ?? 0),
+          });
+        }
+      } catch { /* ignore */ }
+    }
+    return runs;
+  }
+
   private async _refreshRunList() {
     try {
       const lines = await this.sendCmd('listRuns');
-      for (const l of lines) {
-        const t = l.trim();
-        if (!t.startsWith('{')) continue;
-        try {
-          const j = JSON.parse(t);
-          if (Array.isArray(j['runs'])) {
-            const ids: number[] = (j['runs'] as unknown[]).map(Number);
-            this.deviceRunIds  = ids;
-            this.unsyncedCount = ids.filter(id => !hasDeviceRun(id)).length;
-            this.dispatchEvent(new CustomEvent('sync-check-changed'));
-          }
-        } catch { /* ignore */ }
+      const runs  = this._parseRunList(lines);
+      if (runs.length === 0 && lines.some(l => l.trim().startsWith('{'))) {
+        // got JSON but no runs — device has none
       }
+      this.deviceRuns    = runs;
+      this.unsyncedCount = runs.filter(r => !hasDeviceRunByRunId(r.runId)).length;
+      this.dispatchEvent(new CustomEvent('sync-check-changed'));
     } catch { /* ignore */ }
   }
 
   private async _initAfterConnect() {
     await this.sendCmd(`setTime -ts ${Math.floor(Date.now() / 1000)}`);
-    // Check for unsynced runs after setTime completes
     try {
       const lines = await this.sendCmd('listRuns');
-      for (const l of lines) {
-        const t = l.trim();
-        if (!t.startsWith('{')) continue;
-        try {
-          const j = JSON.parse(t);
-          if (Array.isArray(j['runs'])) {
-            const ids: number[] = (j['runs'] as unknown[]).map(Number);
-            this.deviceRunIds  = ids;
-            this.unsyncedCount = ids.filter(id => !hasDeviceRun(id)).length;
-            this.dispatchEvent(new CustomEvent('sync-check-changed'));
-          }
-        } catch { /* ignore */ }
-      }
+      const runs  = this._parseRunList(lines);
+      this.deviceRuns    = runs;
+      this.unsyncedCount = runs.filter(r => !hasDeviceRunByRunId(r.runId)).length;
+      this.dispatchEvent(new CustomEvent('sync-check-changed'));
     } catch { /* ignore */ }
   }
 

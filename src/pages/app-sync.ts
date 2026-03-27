@@ -5,7 +5,7 @@ import { bleService } from '../ble-service';
 import {
   DeviceRun,
   getDeviceRuns,
-  hasDeviceRun,
+  hasDeviceRunByRunId,
   saveDeviceRun,
   onDeviceRunsChanged,
   parseMeta,
@@ -59,7 +59,7 @@ export class AppSync extends LitElement {
   // ── Local / device state ─────────────────────────────────────────────
   @state() private connected      = bleService.connStatus === 'connected';
   @state() private runs: DeviceRun[] = getDeviceRuns();
-  @state() private deviceOnlyIds: number[] = [];
+  @state() private deviceOnlyRuns: Array<{idx: number; runId: string; tagId: string; startTime: number}> = [];
   @state() private syncStatus: SyncStatus = 'idle';
   @state() private syncMsg      = '';
   @state() private syncProgress = '';
@@ -79,8 +79,10 @@ export class AppSync extends LitElement {
 
   private _onStatus    = () => { this.connected = bleService.connStatus === 'connected'; };
   private _onSyncCheck = () => {
-    const localIds = new Set(getDeviceRuns().map(r => r.id));
-    this.deviceOnlyIds = bleService.deviceRunIds.filter(id => !localIds.has(id));
+    this.deviceOnlyRuns = bleService.deviceRuns.filter(r => {
+      if (r.runId) return !hasDeviceRunByRunId(r.runId);
+      return !getDeviceRuns().some(local => local.id === r.idx);
+    });
   };
   private _unsub?:   () => void;
   private _unsubUp?: () => void;
@@ -194,32 +196,42 @@ export class AppSync extends LitElement {
     const listErr   = this._findError(listLines);
     if (listErr) { this.syncStatus = 'error'; this.syncMsg = listErr; return; }
 
-    let deviceIds: number[] = [];
+    const deviceRuns: Array<{idx: number; runId: string; tagId: string; startTime: number}> = [];
     for (const l of listLines) {
       const j = this._tryJson(l);
-      if (j && Array.isArray(j['runs'])) { deviceIds = (j['runs'] as unknown[]).map(Number); break; }
+      if (j?.['run']) {
+        const r = j['run'] as Record<string, unknown>;
+        deviceRuns.push({
+          idx:       Number(r['idx']       ?? 0),
+          runId:     String(r['runId']      ?? ''),
+          tagId:     String(r['tagId']      ?? ''),
+          startTime: Number(r['startTime']  ?? 0),
+        });
+      }
     }
 
-    if (deviceIds.length === 0) { this.syncStatus = 'done'; this.syncMsg = 'No runs on device.'; return; }
+    if (deviceRuns.length === 0) { this.syncStatus = 'done'; this.syncMsg = 'No runs on device.'; return; }
 
-    const toDownload = deviceIds.filter(id => !hasDeviceRun(id));
+    const toDownload = deviceRuns.filter(r =>
+      r.runId ? !hasDeviceRunByRunId(r.runId) : !getDeviceRuns().some(local => local.id === r.idx)
+    );
     if (toDownload.length === 0) {
       this.syncStatus = 'done';
-      this.syncMsg = `Already up to date — ${deviceIds.length} run(s) on device.`;
+      this.syncMsg = `Already up to date — ${deviceRuns.length} run(s) on device.`;
       return;
     }
 
     this.syncStatus = 'downloading';
     let done = 0;
-    for (const id of toDownload) {
+    for (const r of toDownload) {
       this.syncProgress = `${done} / ${toDownload.length}`;
-      const logLines = await bleService.sendCmd(`getStateLogs -run ${id}`);
+      const logLines = await bleService.sendCmd(`getStateLogs -run ${r.idx}`);
       const logErr   = this._findError(logLines);
-      if (logErr) { this.syncStatus = 'error'; this.syncMsg = `Run ${id}: ${logErr}`; return; }
+      if (logErr) { this.syncStatus = 'error'; this.syncMsg = `Run ${r.idx}: ${logErr}`; return; }
 
       const dataLines = logLines.filter(l => { const t = l.trim(); return t !== '' && !t.startsWith('{'); });
       if (dataLines.length < 3) {
-        this.syncStatus = 'error'; this.syncMsg = `Run ${id}: not enough header lines`; return;
+        this.syncStatus = 'error'; this.syncMsg = `Run ${r.idx}: not enough header lines`; return;
       }
 
       const fields  = ['timestamp', ...dataLines[0].split(',')];
@@ -229,13 +241,13 @@ export class AppSync extends LitElement {
         String(meta.startTime + i * meta.interval), ...row,
       ]);
 
-      saveDeviceRun({ id, downloadedAt: Date.now(), fields, units, meta, rows });
+      saveDeviceRun({ id: r.idx, downloadedAt: Date.now(), fields, units, meta, rows });
       done++;
       this.syncProgress = `${done} / ${toDownload.length}`;
     }
 
     this.syncStatus = 'done';
-    this.syncMsg    = `Downloaded ${toDownload.length} new run(s). Total: ${deviceIds.length}.`;
+    this.syncMsg    = `Downloaded ${toDownload.length} new run(s). Total: ${deviceRuns.length}.`;
     this.syncProgress = '';
     bleService.unsyncedCount = 0;
     bleService.dispatchEvent(new CustomEvent('sync-check-changed'));
@@ -277,12 +289,14 @@ export class AppSync extends LitElement {
       </a>`;
   }
 
-  private _renderDeviceOnlyRun(id: number) {
+  private _renderDeviceOnlyRun(r: {idx: number; tagId: string; startTime: number}) {
+    const name = r.tagId || `Run #${r.idx}`;
+    const date = r.startTime ? new Date(r.startTime * 1000).toLocaleDateString() : 'Not yet downloaded';
     return html`
       <div class="run-item device-only">
         <div class="run-info">
-          <span class="run-name">Run #${id}</span>
-          <span class="run-date">Not yet downloaded</span>
+          <span class="run-name">${name}</span>
+          <span class="run-date">${date}</span>
         </div>
         <div class="run-steps">
           <span class="step-btn active" data-tip="Exists on device">
@@ -662,7 +676,7 @@ export class AppSync extends LitElement {
     const localFiltered = filterTag
       ? this.runs.filter(r => r.meta?.tagId?.toUpperCase() === filterTag.toUpperCase())
       : this.runs;
-    const deviceFiltered = filterTag ? [] : this.deviceOnlyIds;
+    const deviceFiltered = filterTag ? [] : this.deviceOnlyRuns;
     const totalLocal  = localFiltered.length + deviceFiltered.length;
 
     return html`
@@ -745,7 +759,7 @@ export class AppSync extends LitElement {
           <div class="card">
             <div class="card-header">
               <span class="card-title">
-                ${filterTag ? `Local — ${totalLocal} match${totalLocal !== 1 ? 'es' : ''}` : `Local Runs (${this.runs.length + this.deviceOnlyIds.length})`}
+                ${filterTag ? `Local — ${totalLocal} match${totalLocal !== 1 ? 'es' : ''}` : `Local Runs (${this.runs.length + this.deviceOnlyRuns.length})`}
               </span>
             </div>
             ${totalLocal === 0
@@ -756,7 +770,7 @@ export class AppSync extends LitElement {
                 </div>`
               : html`
                 <div class="runs-list">
-                  ${deviceFiltered.map(id => this._renderDeviceOnlyRun(id))}
+                  ${deviceFiltered.map(r => this._renderDeviceOnlyRun(r))}
                   ${localFiltered.map(run => this._renderRun(run))}
                 </div>
               `}

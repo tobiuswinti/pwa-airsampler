@@ -19,6 +19,7 @@ export class AppStatus extends LitElement {
   @state() private connStatus: ConnStatus = bleService.connStatus;
   @state() private liveState: LiveState | null = bleService.liveState;
   @state() private sysLog: string[] = [...bleService.sysLog];
+  @state() private _stopConfirm = false;
 
   private _hist: HistPoint[] = [];
 
@@ -26,6 +27,9 @@ export class AppStatus extends LitElement {
   private _onState  = () => {
     this.liveState = bleService.liveState;
     const s = bleService.liveState;
+    if (s && s.samplingState !== 'running' && s.samplingState !== 'waiting' && s.samplingState !== 'paused') {
+      this._stopConfirm = false;
+    }
     if (s) {
       this._hist = [...this._hist.slice(-(MAX_HIST - 1)), {
         ts:          Date.now(),
@@ -44,7 +48,12 @@ export class AppStatus extends LitElement {
       }];
     }
   };
-  private _onLog = () => { this.sysLog = [...bleService.sysLog]; };
+  private _onLog   = () => { this.sysLog = [...bleService.sysLog]; };
+
+  private async _stopSampling() {
+    this._stopConfirm = false;
+    await bleService.sendCmd('stopSampling');
+  }
 
   connectedCallback() {
     super.connectedCallback();
@@ -451,11 +460,12 @@ export class AppStatus extends LitElement {
     .stats-row {
       display: grid;
       grid-template-columns: repeat(3, 1fr);
+      column-gap: 8px;
     }
 
     .stat-cell {
       background: transparent;
-      padding: 10px 4px 0;
+      padding: 10px 0 0;
       display: flex;
       flex-direction: column;
       gap: 2px;
@@ -609,6 +619,71 @@ export class AppStatus extends LitElement {
       font-size: 0.75rem;
       color: var(--muted-fg);
       padding: 8px 0;
+    }
+
+    .sampling-stop-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 14px;
+      padding-top: 12px;
+      border-top: 1px solid #27272a;
+      flex-wrap: wrap;
+    }
+
+    .btn-stop-sampling {
+      font-family: var(--sans);
+      font-size: 0.8rem;
+      font-weight: 500;
+      padding: 6px 14px;
+      border-radius: 6px;
+      border: 1px solid #7f1d1d;
+      background: rgba(239,68,68,0.06);
+      color: #fca5a5;
+      cursor: pointer;
+      transition: background 0.15s;
+      white-space: nowrap;
+    }
+
+    .btn-stop-sampling:hover { background: rgba(239,68,68,0.12); }
+
+    .btn-stop-confirm {
+      font-family: var(--sans);
+      font-size: 0.8rem;
+      font-weight: 500;
+      padding: 6px 14px;
+      border-radius: 6px;
+      border: 1px solid #ef4444;
+      background: rgba(239,68,68,0.10);
+      color: #f87171;
+      cursor: pointer;
+      animation: stop-pulse 0.8s ease-in-out infinite;
+      white-space: nowrap;
+    }
+
+    @keyframes stop-pulse {
+      0%, 100% { border-color: #ef4444; }
+      50%       { border-color: #7f1d1d; }
+    }
+
+    .btn-stop-cancel {
+      font-family: var(--sans);
+      font-size: 0.8rem;
+      padding: 6px 12px;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      background: transparent;
+      color: var(--muted-fg);
+      cursor: pointer;
+      white-space: nowrap;
+    }
+
+    .btn-stop-cancel:hover { border-color: #52525b; color: var(--fg); }
+
+    .stop-warn {
+      font-family: var(--mono);
+      font-size: 0.68rem;
+      color: #f87171;
     }
 
     @media (max-width: 420px) {
@@ -769,6 +844,17 @@ export class AppStatus extends LitElement {
                       <span class="sampling-info-label">Temp</span>
                       <span class="sampling-info-value" style="color:#f97316">${this._fmt(s.temperature, 1, '°C')}</span>
                     </div>
+                  </div>
+                  <div class="sampling-stop-row">
+                    ${this._stopConfirm ? html`
+                      <span class="stop-warn">Stop and save current run?</span>
+                      <button class="btn-stop-confirm" @click=${this._stopSampling}>Confirm stop</button>
+                      <button class="btn-stop-cancel" @click=${() => { this._stopConfirm = false; }}>Cancel</button>
+                    ` : html`
+                      <button class="btn-stop-sampling" @click=${() => { this._stopConfirm = true; }}>
+                        Stop prematurely
+                      </button>
+                    `}
                   </div>
                 ` : html`
                   <p class="sampling-idle-msg">No active sampling session.</p>
