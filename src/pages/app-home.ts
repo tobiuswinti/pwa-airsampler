@@ -43,10 +43,10 @@ export class AppHome extends LitElement {
   static styles = css`
     :host {
       --bg:       #09090b;
-      --card:     #09090b;
-      --border:   #27272a;
+      --card:     #111113;
+      --border:   #58585f;
       --fg:       #fafafa;
-      --muted-fg: #71717a;
+      --muted-fg: #c4c4cc;
       --sans: 'Geist', 'Inter', system-ui, sans-serif;
       --mono: 'Share Tech Mono', monospace;
     }
@@ -333,21 +333,10 @@ export class AppHome extends LitElement {
               <svg viewBox="0 0 24 24" fill="#a1a1aa"><path d="M12 4V1L8 5l4 4V6c3.31 0 6 2.69 6 6 0 1.01-.25 1.97-.7 2.8l1.46 1.46C19.54 15.03 20 13.57 20 12c0-4.42-3.58-8-8-8zm0 14c-3.31 0-6-2.69-6-6 0-1.01.25-1.97.7-2.8L5.24 7.74C4.46 8.97 4 10.43 4 12c0 4.42 3.58 8 8 8v3l4-4-4-4v3z"/></svg>
             </div>
             <div class="nav-text">
-              <span class="nav-label">Sync Logs</span>
-              <span class="nav-desc">Download new logs from device</span>
+              <span class="nav-label">Runs</span>
+              <span class="nav-desc">Sync, browse and look up sampling runs</span>
             </div>
             ${syncBadge > 0 ? html`<span class="nav-badge">${syncBadge}</span>` : ''}
-            <span class="nav-arrow">›</span>
-          </a>
-
-          <a class="nav-card" href="${resolveRouterPath('sample')}">
-            <div class="nav-icon" style="background:rgba(255,255,255,0.06);">
-              <svg viewBox="0 0 24 24" fill="#a1a1aa"><path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 14H5.17L4 17.17V4h16v12z"/><path d="M6 15h2v-2H6v2zm0-4h2V9H6v2zm0-4h2V5H6v2zm4 8h2v-2h-2v2zm0-4h2V9h-2v2zm0-4h2V5h-2v2zm4 8h2v-2h-2v2zm0-4h2V9h-2v2zm0-4h2V5h-2v2z"/></svg>
-            </div>
-            <div class="nav-text">
-              <span class="nav-label">Sample Lookup</span>
-              <span class="nav-desc">Find a run by scanning its RFID tag</span>
-            </div>
             <span class="nav-arrow">›</span>
           </a>
 

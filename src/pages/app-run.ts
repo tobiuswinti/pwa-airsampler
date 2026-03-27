@@ -1,84 +1,90 @@
 import { LitElement, css, html } from 'lit';
 import { state, customElement } from 'lit/decorators.js';
 import { resolveRouterPath } from '../router';
+import { doc, getDoc, Timestamp } from 'firebase/firestore';
+import { db } from '../firebase';
 import { DeviceRun, getDeviceRuns, deleteDeviceRun } from '../device-log-store';
 
-// ── Chart groups ───────────────────────────────────────────────────────────
+// ── Interfaces ────────────────────────────────────────────────────────────
 
 interface Series {
-  field:      string;
-  label:      string;
-  color:      string;
-  dashed?:    boolean;
-  normalize?: boolean;
-  domainMin?: number;
-  domainMax?: number;
+  field: string; label: string; color: string; unit: string;
+  dashed?: boolean; domainMin?: number; domainMax?: number;
+  convert?: (v: number) => number;
+}
+interface ChartGroup { id: string; title: string; series: Series[]; }
+
+interface ComputedSeries {
+  field: string; label: string; color: string; unit: string;
+  vals: number[];
+  sMin: number; sMax: number;
+}
+interface ComputedChart {
+  timestamps: number[];
+  series: ComputedSeries[];
+  tStart: number; dur: number;
+  PL: number; PR: number; PT: number; PB: number;
 }
 
-interface ChartGroup {
-  id:     string;
-  title:  string;
-  series: Series[];
-}
+// ── Chart groups ──────────────────────────────────────────────────────────
 
 const CHART_GROUPS: ChartGroup[] = [
   {
-    id: 'flow', title: 'Flow',
+    id: 'env', title: 'Environment',
     series: [
-      { field: 'flowrate',   label: 'Actual',   color: '#3b82f6', domainMin: 0 },
-      { field: 'flowrateSP', label: 'Setpoint', color: '#f59e0b', dashed: true, domainMin: 0 },
+      { field: 'temperature', label: 'Temp',     color: '#f97316', unit: '°C' },
+      { field: 'humidity',    label: 'Humidity', color: '#06b6d4', unit: '%RH', domainMin: 0, domainMax: 100 },
+      { field: 'pressure',    label: 'Pressure', color: '#6366f1', unit: 'bar',
+        convert: (v: number) => v / 100_000 },
     ],
   },
   {
     id: 'battery', title: 'Battery',
     series: [
-      { field: 'soc',     label: 'SoC',     color: '#22c55e', domainMin: 0, domainMax: 100 },
-      { field: 'voltage', label: 'Voltage', color: '#a78bfa', normalize: true },
-      { field: 'current', label: 'Current', color: '#94a3b8', normalize: true },
-    ],
-  },
-  {
-    id: 'env', title: 'Environment',
-    series: [
-      { field: 'temperature', label: 'Temp',     color: '#f97316' },
-      { field: 'humidity',    label: 'Humidity', color: '#06b6d4', normalize: true, domainMin: 0, domainMax: 100 },
-      { field: 'pressure',    label: 'Pressure', color: '#6366f1', normalize: true },
-    ],
-  },
-  {
-    id: 'mechanical', title: 'Mechanical',
-    series: [
-      { field: 'fanRpm',   label: 'Fan RPM', color: '#71717a' },
-      { field: 'servoMm',  label: 'Servo',   color: '#84cc16', normalize: true },
+      { field: 'soc',     label: 'SoC',     color: '#22c55e', unit: '%', domainMin: 0, domainMax: 100 },
+      { field: 'voltage', label: 'Voltage', color: '#a78bfa', unit: 'V' },
     ],
   },
 ];
 
-// Fields shown as key-metrics pills (in order)
-const KEY_FIELDS = ['flowrate', 'soc', 'temperature', 'humidity', 'pressure', 'voltage', 'fanRpm'];
-
-// ── Helpers ────────────────────────────────────────────────────────────────
-
-const FIELD_LABEL: Record<string, string> = {
-  flowrate: 'Flow', flowrateSP: 'Setpoint', soc: 'SoC', voltage: 'Voltage',
-  current: 'Current', power: 'Power', tte: 'Runtime', temperature: 'Temp',
-  humidity: 'Humidity', pressure: 'Pressure', fanRpm: 'Fan', servoMm: 'Servo',
-};
-
-const FIELD_UNIT: Record<string, string> = {
-  flowrate: 'L/s', flowrateSP: 'L/s', soc: '%', voltage: 'V',
-  current: 'A', power: 'W', tte: 'h', temperature: '°C',
-  humidity: '%RH', pressure: 'Pa', fanRpm: 'rpm', servoMm: 'mm',
-};
-
-const FIELD_DEC: Record<string, number> = {
-  flowrate: 3, flowrateSP: 3, soc: 1, voltage: 2, current: 3, power: 2,
-  tte: 2, temperature: 1, humidity: 1, pressure: 0, fanRpm: 0, servoMm: 2,
-};
-
 const STATE_COLOR: Record<string, string> = {
   running: '#22c55e', paused: '#f59e0b', waiting: '#3b82f6', idle: '#52525b',
 };
+
+// ── Helper functions ──────────────────────────────────────────────────────
+
+function minVal(run: DeviceRun, field: string): number | null {
+  const idx = run.fields.indexOf(field);
+  if (idx < 0) return null;
+  let min = Infinity;
+  for (const row of run.rows) { const v = Number(row[idx]); if (isFinite(v)) min = Math.min(min, v); }
+  return isFinite(min) ? min : null;
+}
+
+function maxVal(run: DeviceRun, field: string): number | null {
+  const idx = run.fields.indexOf(field);
+  if (idx < 0) return null;
+  let max = -Infinity;
+  for (const row of run.rows) { const v = Number(row[idx]); if (isFinite(v)) max = Math.max(max, v); }
+  return isFinite(max) ? max : null;
+}
+
+function avgVal(run: DeviceRun, field: string): number | null {
+  const idx = run.fields.indexOf(field);
+  if (idx < 0) return null;
+  let sum = 0, count = 0;
+  for (const row of run.rows) { const v = Number(row[idx]); if (isFinite(v)) { sum += v; count++; } }
+  return count > 0 ? sum / count : null;
+}
+
+function lastVal(run: DeviceRun, field: string): number | null {
+  const idx = run.fields.indexOf(field);
+  if (idx < 0) return null;
+  for (let i = run.rows.length - 1; i >= 0; i--) {
+    const v = Number(run.rows[i][idx]); if (isFinite(v)) return v;
+  }
+  return null;
+}
 
 function fmtElapsed(ms: number): string {
   const h = Math.floor(ms / 3_600_000);
@@ -88,8 +94,6 @@ function fmtElapsed(ms: number): string {
   if (m > 0) return s > 0 ? `${m}m ${s}s` : `${m}m`;
   return `${s}s`;
 }
-
-function fmtDate(ms: number): string { return new Date(ms).toLocaleString(); }
 
 function pickTickMs(dur: number): number {
   if (dur <=   5 * 60_000) return       30_000;
@@ -108,21 +112,28 @@ function fmtTick(ms: number): string {
 }
 
 function yFmt(v: number, range: number): string {
-  if (range < 0.1)  return v.toFixed(4);
-  if (range < 1)    return v.toFixed(3);
-  if (range < 10)   return v.toFixed(2);
-  if (range < 100)  return v.toFixed(1);
+  if (range < 0.001) return v.toFixed(5);
+  if (range < 0.01)  return v.toFixed(4);
+  if (range < 0.1)   return v.toFixed(3);
+  if (range < 1)     return v.toFixed(2);
+  if (range < 10)    return v.toFixed(1);
   return v.toFixed(0);
 }
 
-function lastVal(run: DeviceRun, field: string): number | null {
-  const idx = run.fields.indexOf(field);
-  if (idx < 0) return null;
-  for (let i = run.rows.length - 1; i >= 0; i--) {
-    const v = Number(run.rows[i][idx]);
-    if (isFinite(v)) return v;
-  }
-  return null;
+function roundRect(
+  ctx: CanvasRenderingContext2D,
+  x: number, y: number, w: number, h: number, r: number,
+) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y); ctx.lineTo(x + w - r, y);
+  ctx.arcTo(x + w, y, x + w, y + r, r);
+  ctx.lineTo(x + w, y + h - r);
+  ctx.arcTo(x + w, y + h, x + w - r, y + h, r);
+  ctx.lineTo(x + r, y + h);
+  ctx.arcTo(x, y + h, x, y + h - r, r);
+  ctx.lineTo(x, y + r);
+  ctx.arcTo(x, y, x + r, y, r);
+  ctx.closePath();
 }
 
 // ── Component ─────────────────────────────────────────────────────────────
@@ -130,15 +141,19 @@ function lastVal(run: DeviceRun, field: string): number | null {
 @customElement('app-run')
 export class AppRun extends LitElement {
 
-  @state() private run: DeviceRun | null = null;
-  @state() private notFound = false;
+  @state() private run:      DeviceRun | null = null;
+  @state() private loading   = false;
+  @state() private error     = '';
+  @state() private isCloud   = false;
 
-  private _onHash = () => this._loadRun();
+  private _onHash = () => this._load();
+  private _charts = new Map<string, ComputedChart>();
+  private _boundListeners = new Set<string>();
 
   connectedCallback() {
     super.connectedCallback();
     window.addEventListener('hashchange', this._onHash);
-    this._loadRun();
+    this._load();
   }
 
   disconnectedCallback() {
@@ -146,64 +161,153 @@ export class AppRun extends LitElement {
     window.removeEventListener('hashchange', this._onHash);
   }
 
-  private _loadRun() {
-    const match = window.location.hash.match(/^#run\/(\d+)$/);
-    if (!match) { this.notFound = true; return; }
-    const id  = Number(match[1]);
-    const run = getDeviceRuns().find(r => r.id === id) ?? null;
-    this.run      = run;
-    this.notFound = !run;
-    if (run) document.title = `AirSampler — ${run.meta?.tagId || `Run #${run.id}`}`;
+  private async _load() {
+    const hash = window.location.hash;
+
+    const localMatch = hash.match(/^#run\/(\d+)$/);
+    const cloudMatch = hash.match(/^#cloud-run\/(.+)$/);
+
+    if (localMatch) {
+      this.isCloud = false;
+      this.loading = false;
+      this.error   = '';
+      const id  = Number(localMatch[1]);
+      const run = getDeviceRuns().find(r => r.id === id) ?? null;
+      this.run  = run;
+      if (!run) this.error = 'Run not found or deleted.';
+      else document.title = `AirSampler — ${run.meta?.tagId || `Run #${run.id}`}`;
+      return;
+    }
+
+    if (cloudMatch) {
+      this.isCloud = true;
+      this.loading = true;
+      this.error   = '';
+      this.run     = null;
+      const docId  = cloudMatch[1];
+
+      try {
+        const snap = await getDoc(doc(db, 'device_runs', docId));
+        if (!snap.exists()) {
+          this.error   = 'Run not found in cloud.';
+          this.loading = false;
+          return;
+        }
+        const d          = snap.data();
+        const uploadedAt = d['uploadedAt'] instanceof Timestamp
+          ? d['uploadedAt'].toMillis()
+          : Number(d['uploadedAt'] ?? 0);
+        const meta       = d['meta'] ?? {};
+        const csvRows: string[] = d['csvRows'] ?? [];
+        const rows = csvRows.map((r: string) => r.split(','));
+
+        this.run = {
+          id:             Number(d['deviceRunId'] ?? 0),
+          downloadedAt:   Number(d['downloadedAt'] ?? 0),
+          fields:         d['fields']  ?? [],
+          units:          d['units']   ?? [],
+          meta: {
+            startTime: Number(meta['startTime'] ?? d['startTime'] ?? 0),
+            interval:  Number(meta['interval']  ?? 1000),
+            tagId:     meta['tagId']  ?? d['tagId'] ?? '',
+            lat:       meta['lat']    ?? '',
+            lon:       meta['lon']    ?? '',
+            states:    meta['states'] ?? '',
+          },
+          rows,
+          firebaseId:      docId,
+          cloudUploadedAt: uploadedAt,
+        };
+        document.title = `AirSampler — ${this.run.meta.tagId || `Run #${this.run.id}`}`;
+      } catch (err: unknown) {
+        this.error = (err as Error)?.message ?? 'Failed to load run from cloud.';
+      } finally {
+        this.loading = false;
+      }
+      return;
+    }
+
+    this.error = 'Invalid URL.';
+    this.loading = false;
   }
 
-  updated() { if (this.run) this._drawAllCharts(); }
-
-  // ── Duration ──────────────────────────────────────────────────────────
+  updated() {
+    if (this.run) {
+      this._buildAndDrawCharts();
+      this._bindHoverListeners();
+    }
+  }
 
   private _duration(): number {
-    const run   = this.run!;
-    const tsIdx = run.fields.indexOf('timestamp');
+    const run = this.run!; const tsIdx = run.fields.indexOf('timestamp');
     if (tsIdx < 0 || run.rows.length < 2) return (run.rows.length - 1) * run.meta.interval;
     return Number(run.rows[run.rows.length - 1][tsIdx]) - Number(run.rows[0][tsIdx]);
   }
 
-  // ── Chart drawing ──────────────────────────────────────────────────────
+  // ── Chart building ────────────────────────────────────────────────────
 
-  private _drawAllCharts() {
+  private _buildAndDrawCharts() {
+    this._charts.clear();
     const run   = this.run!;
     const tsIdx = run.fields.indexOf('timestamp');
     if (tsIdx < 0) return;
 
-    // Multi-series grouped charts
     for (const group of CHART_GROUPS) {
-      const resolved = group.series
-        .map(s => ({ ...s, colIdx: run.fields.indexOf(s.field) }))
-        .filter(s => s.colIdx >= 0);
-      if (resolved.length === 0) continue;
+      const activeSeries = group.series.filter(s => run.fields.indexOf(s.field) >= 0);
+      if (activeSeries.length === 0) continue;
 
-      const pts = run.rows
-        .map(row => ({ ts: Number(row[tsIdx]), vals: resolved.map(s => Number(row[s.colIdx])) }))
-        .filter(p => isFinite(p.ts));
-      if (pts.length < 2) continue;
-      this._drawGroupChart(`chart-${group.id}`, pts, resolved);
+      const timestamps: number[] = [];
+      for (const row of run.rows) {
+        const t = Number(row[tsIdx]);
+        if (isFinite(t)) timestamps.push(t);
+      }
+      if (timestamps.length < 2) continue;
+
+      const tStart = timestamps[0];
+      const tEnd   = timestamps[timestamps.length - 1];
+      const dur    = Math.max(tEnd - tStart, 1);
+
+      const numRight = Math.min(activeSeries.length - 1, 2);
+      const PL = 48, PR = 10 + numRight * 52, PT = 10, PB = 24;
+
+      const computedSeries: ComputedSeries[] = activeSeries.map(s => {
+        const colIdx = run.fields.indexOf(s.field);
+        const vals: number[] = [];
+        for (const row of run.rows) {
+          const t = Number(row[tsIdx]);
+          if (!isFinite(t)) continue;
+          const raw = Number(row[colIdx]);
+          vals.push(isFinite(raw) ? (s.convert ? s.convert(raw) : raw) : NaN);
+        }
+        let sMin = Infinity, sMax = -Infinity;
+        for (const v of vals) { if (isFinite(v)) { sMin = Math.min(sMin, v); sMax = Math.max(sMax, v); } }
+        if (!isFinite(sMin)) { sMin = 0; sMax = 1; }
+        if (sMin === sMax)   { sMin -= 0.5; sMax += 0.5; }
+        const pad = Math.max((sMax - sMin) * 0.08, 0.00001);
+        const cMin = s.convert && s.domainMin !== undefined ? s.convert(s.domainMin) : s.domainMin;
+        const cMax = s.convert && s.domainMax !== undefined ? s.convert(s.domainMax) : s.domainMax;
+        sMin = cMin !== undefined ? Math.max(cMin, sMin - pad) : sMin - pad;
+        sMax = cMax !== undefined ? Math.min(cMax, sMax + pad) : sMax + pad;
+        return { field: s.field, label: s.label, color: s.color, unit: s.unit, vals, sMin, sMax };
+      });
+
+      const chart: ComputedChart = { timestamps, series: computedSeries, tStart, dur, PL, PR, PT, PB };
+      this._charts.set(group.id, chart);
+      this._renderChart(group.id, chart, null);
     }
 
-    // State timeline
+    // State chart
     const stateIdx = run.fields.indexOf('samplingState');
     if (stateIdx >= 0) {
       const pts = run.rows
-        .map(row => ({ ts: Number(row[tsIdx]), state: row[stateIdx] }))
+        .map(row => ({ ts: Number(row[tsIdx]), state: String(row[stateIdx]) }))
         .filter(p => isFinite(p.ts));
       if (pts.length >= 2) this._drawStateChart('chart-states', pts);
     }
   }
 
-  private _drawGroupChart(
-    canvasId: string,
-    pts: { ts: number; vals: number[] }[],
-    series: Array<Series & { colIdx: number }>,
-  ) {
-    const canvas = this.shadowRoot?.querySelector<HTMLCanvasElement>(`#${canvasId}`);
+  private _renderChart(canvasId: string, chart: ComputedChart, hoverIdx: number | null) {
+    const canvas = this.shadowRoot?.querySelector<HTMLCanvasElement>(`#chart-${canvasId}`);
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
@@ -216,82 +320,75 @@ export class AppRun extends LitElement {
     ctx.scale(dpr, dpr);
 
     const W = rect.width, H = rect.height;
-    const PL = 48, PR = 12, PT = 8, PB = 22;
+    const { PL, PR, PT, PB, tStart, dur, timestamps, series } = chart;
     const cW = W - PL - PR, cH = H - PT - PB;
 
     ctx.fillStyle = '#09090b';
     ctx.fillRect(0, 0, W, H);
 
-    const tStart = pts[0].ts, tEnd = pts[pts.length - 1].ts;
-    const dur    = Math.max(tEnd - tStart, 1);
-    const tsToX  = (ts: number) => PL + cW * (ts - tStart) / dur;
+    const tsToX = (ts: number) => PL + cW * (ts - tStart) / dur;
 
-    // Grid
-    ctx.strokeStyle = 'rgba(255,255,255,0.04)';
+    // Grid (5 lines based on series[0] scale)
+    ctx.strokeStyle = 'rgba(255,255,255,0.05)';
     ctx.lineWidth   = 1;
     for (let i = 0; i <= 4; i++) {
       const y = PT + cH * i / 4;
       ctx.beginPath(); ctx.moveTo(PL, y); ctx.lineTo(W - PR, y); ctx.stroke();
     }
 
-    // Y range from non-normalized series
-    let gMin = Infinity, gMax = -Infinity;
-    let gDomMin = Infinity, gDomMax = -Infinity;
-    series.forEach((s, si) => {
-      if (s.normalize) return;
-      if (s.domainMin !== undefined) gDomMin = Math.min(gDomMin, s.domainMin);
-      if (s.domainMax !== undefined) gDomMax = Math.max(gDomMax, s.domainMax);
-      for (const p of pts) {
-        const v = p.vals[si];
-        if (isFinite(v)) { gMin = Math.min(gMin, v); gMax = Math.max(gMax, v); }
-      }
-    });
-    if (!isFinite(gMin)) { gMin = 0; gMax = 1; }
-    if (gMin === gMax)   { gMin -= 0.5; gMax += 0.5; }
-    const gPad = Math.max((gMax - gMin) * 0.08, 0.05);
-    gMin = isFinite(gDomMin) ? Math.max(gDomMin, gMin - gPad) : gMin - gPad;
-    gMax = isFinite(gDomMax) ? Math.min(gDomMax, gMax + gPad) : gMax + gPad;
-    const gRange = gMax - gMin;
-
-    // Y labels
-    ctx.fillStyle = '#52525b'; ctx.font = '9px monospace'; ctx.textAlign = 'right';
-    for (let i = 0; i <= 4; i++) {
-      ctx.fillText(yFmt(gMax - gRange * i / 4, gRange), PL - 4, PT + cH * i / 4 + 3.5);
-    }
-
     // X ticks
     const tickMs = pickTickMs(dur);
-    ctx.font = '8px monospace'; ctx.textAlign = 'center';
+    ctx.font      = '8px monospace'; ctx.textAlign = 'center';
     for (let el = 0; el <= dur + tickMs * 0.01; el += tickMs) {
       const x = PL + cW * el / dur;
-      ctx.strokeStyle = 'rgba(255,255,255,0.04)'; ctx.lineWidth = 1;
+      ctx.strokeStyle = 'rgba(255,255,255,0.05)'; ctx.lineWidth = 1;
       ctx.beginPath(); ctx.moveTo(x, PT); ctx.lineTo(x, PT + cH); ctx.stroke();
       ctx.fillStyle = '#3f3f46';
       ctx.fillText(fmtTick(el), Math.min(x, W - PR), PT + cH + PB - 6);
     }
 
-    // Draw series
+    // Y axis labels — per series
+    ctx.font = '9px monospace';
     series.forEach((s, si) => {
-      let sMin = gMin, sMax = gMax;
-      if (s.normalize) {
-        sMin = Infinity; sMax = -Infinity;
-        for (const p of pts) { const v = p.vals[si]; if (isFinite(v)) { sMin = Math.min(sMin, v); sMax = Math.max(sMax, v); } }
-        if (!isFinite(sMin)) return;
-        if (sMin === sMax)   { sMin -= 0.5; sMax += 0.5; }
-        const sPad = Math.max((sMax - sMin) * 0.08, 0.05);
-        sMin = s.domainMin !== undefined ? Math.max(s.domainMin, sMin - sPad) : sMin - sPad;
-        sMax = s.domainMax !== undefined ? Math.min(s.domainMax, sMax + sPad) : sMax + sPad;
+      const range = s.sMax - s.sMin;
+      if (si === 0) {
+        ctx.textAlign = 'right';
+        ctx.fillStyle = s.color;
+        for (let i = 0; i <= 4; i++) {
+          const v = s.sMax - range * i / 4;
+          ctx.fillText(yFmt(v, range), PL - 5, PT + cH * i / 4 + 3.5);
+        }
+      } else if (si === 1) {
+        ctx.textAlign = 'left';
+        ctx.fillStyle = s.color;
+        for (let i = 0; i <= 4; i++) {
+          const v = s.sMax - range * i / 4;
+          ctx.fillText(yFmt(v, range), W - PR + 10, PT + cH * i / 4 + 3.5);
+        }
+      } else if (si === 2) {
+        ctx.textAlign = 'left';
+        ctx.fillStyle = s.color;
+        for (let i = 0; i <= 4; i++) {
+          const v = s.sMax - range * i / 4;
+          ctx.fillText(yFmt(v, range), W - PR + 10 + 52, PT + cH * i / 4 + 3.5);
+        }
       }
+    });
 
-      const coords = pts.map(p => [
-        tsToX(p.ts),
-        PT + cH * (1 - (p.vals[si] - sMin) / (sMax - sMin)),
-      ] as [number, number]);
+    // Series lines + fills
+    series.forEach(s => {
+      const { sMin, sMax, vals, color } = s;
+      const coords: [number, number][] = [];
+      for (let i = 0; i < timestamps.length; i++) {
+        const v = vals[i];
+        if (!isFinite(v)) continue;
+        coords.push([tsToX(timestamps[i]), PT + cH * (1 - (v - sMin) / (sMax - sMin))]);
+      }
+      if (coords.length < 2) return;
 
-      // Fill
       const grad = ctx.createLinearGradient(0, PT, 0, PT + cH);
-      grad.addColorStop(0, s.color + (s.normalize ? '18' : '28'));
-      grad.addColorStop(1, s.color + '00');
+      grad.addColorStop(0, color + '26');
+      grad.addColorStop(1, color + '00');
       ctx.beginPath();
       ctx.moveTo(coords[0][0], PT + cH);
       for (const [x, y] of coords) ctx.lineTo(x, y);
@@ -299,14 +396,103 @@ export class AppRun extends LitElement {
       ctx.closePath();
       ctx.fillStyle = grad; ctx.fill();
 
-      // Line
-      ctx.strokeStyle = s.color; ctx.lineWidth = 1.5;
+      ctx.strokeStyle = color; ctx.lineWidth = 1.6;
       ctx.lineJoin = 'round'; ctx.lineCap = 'round';
-      ctx.setLineDash(s.dashed ? [5, 3] : []);
+      ctx.setLineDash([]);
       ctx.beginPath(); ctx.moveTo(coords[0][0], coords[0][1]);
       for (let i = 1; i < coords.length; i++) ctx.lineTo(coords[i][0], coords[i][1]);
-      ctx.stroke(); ctx.setLineDash([]);
+      ctx.stroke();
     });
+
+    // Hover
+    if (hoverIdx !== null) {
+      const hx = tsToX(timestamps[hoverIdx]);
+
+      // Crosshair
+      ctx.strokeStyle = 'rgba(255,255,255,0.25)';
+      ctx.lineWidth   = 1;
+      ctx.setLineDash([4, 3]);
+      ctx.beginPath(); ctx.moveTo(hx, PT); ctx.lineTo(hx, PT + cH); ctx.stroke();
+      ctx.setLineDash([]);
+
+      // Dots
+      series.forEach(s => {
+        const v = s.vals[hoverIdx];
+        if (!isFinite(v)) return;
+        const hy = PT + cH * (1 - (v - s.sMin) / (s.sMax - s.sMin));
+        ctx.beginPath(); ctx.arc(hx, hy, 3.5, 0, Math.PI * 2);
+        ctx.fillStyle   = '#09090b'; ctx.fill();
+        ctx.strokeStyle = s.color; ctx.lineWidth = 2; ctx.stroke();
+      });
+
+      // Tooltip
+      const elapsed  = timestamps[hoverIdx] - tStart;
+      const elStr    = '+' + fmtElapsed(elapsed);
+      const lines    = series.map(s => {
+        const v = s.vals[hoverIdx];
+        if (!isFinite(v)) return null;
+        const range = s.sMax - s.sMin;
+        return { text: `${s.label}: ${yFmt(v, range)} ${s.unit}`, color: s.color };
+      }).filter((l): l is { text: string; color: string } => l !== null);
+
+      const PAD    = 8;
+      const lh     = 14;
+      const tipW   = 140;
+      const tipH   = PAD * 2 + lh + lines.length * lh;
+      const spaceR = W - PR - hx;
+      const tipX   = spaceR > tipW + 12 ? hx + 8 : hx - tipW - 8;
+      const tipY   = Math.max(PT, Math.min(PT + cH - tipH, PT + cH / 2 - tipH / 2));
+
+      ctx.fillStyle   = '#1c1c1f';
+      ctx.strokeStyle = '#3f3f46';
+      ctx.lineWidth   = 1;
+      roundRect(ctx, tipX, tipY, tipW, tipH, 5);
+      ctx.fill();
+      roundRect(ctx, tipX, tipY, tipW, tipH, 5);
+      ctx.stroke();
+
+      ctx.font      = '9px monospace';
+      ctx.textAlign = 'left';
+      ctx.fillStyle = '#71717a';
+      ctx.fillText(elStr, tipX + PAD, tipY + PAD + 9);
+
+      lines.forEach((l, i) => {
+        ctx.fillStyle = l.color;
+        ctx.fillText(l.text, tipX + PAD, tipY + PAD + 9 + lh * (i + 1));
+      });
+    }
+  }
+
+  private _bindHoverListeners() {
+    for (const [id] of this._charts) {
+      if (this._boundListeners.has(id)) continue;
+      const canvas = this.shadowRoot?.querySelector<HTMLCanvasElement>(`#chart-${id}`);
+      if (!canvas) continue;
+      this._boundListeners.add(id);
+
+      canvas.addEventListener('mousemove', (e: MouseEvent) => {
+        const currentChart = this._charts.get(id);
+        if (!currentChart) return;
+        const canvasRect = canvas.getBoundingClientRect();
+        const relX       = e.clientX - canvasRect.left;
+        const canvasW    = canvasRect.width;
+        const { PL, PR, tStart, dur } = currentChart;
+        const t = tStart + dur * (relX - PL) / (canvasW - PL - PR);
+        let nearestIdx = 0;
+        let bestDist   = Infinity;
+        for (let i = 0; i < currentChart.timestamps.length; i++) {
+          const d = Math.abs(currentChart.timestamps[i] - t);
+          if (d < bestDist) { bestDist = d; nearestIdx = i; }
+        }
+        this._renderChart(id, currentChart, nearestIdx);
+      });
+
+      canvas.addEventListener('mouseleave', () => {
+        const currentChart = this._charts.get(id);
+        if (!currentChart) return;
+        this._renderChart(id, currentChart, null);
+      });
+    }
   }
 
   private _drawStateChart(canvasId: string, pts: { ts: number; state: string }[]) {
@@ -323,7 +509,7 @@ export class AppRun extends LitElement {
     ctx.scale(dpr, dpr);
 
     const W = rect.width, H = rect.height;
-    const PL = 48, PR = 12, PT = 8, PB = 22;
+    const PL = 48, PR = 12, PT = 4, PB = 24;
     const cW = W - PL - PR, cH = H - PT - PB;
 
     ctx.fillStyle = '#09090b';
@@ -338,22 +524,36 @@ export class AppRun extends LitElement {
       const x1    = i < pts.length - 1 ? tsToX(pts[i + 1].ts) : PL + cW;
       const color = STATE_COLOR[pts[i].state] ?? '#52525b';
       ctx.fillStyle = color + '2a'; ctx.fillRect(x0, PT, x1 - x0, cH);
-      ctx.fillStyle = color + 'cc'; ctx.fillRect(x0, PT, x1 - x0, 2);
+      ctx.fillStyle = color;        ctx.fillRect(x0, PT, x1 - x0, 3);
     }
 
-    // X ticks
+    // State labels
+    const segments: { x0: number; x1: number; state: string }[] = [];
+    for (let i = 0; i < pts.length; i++) {
+      segments.push({
+        x0: tsToX(pts[i].ts),
+        x1: i < pts.length - 1 ? tsToX(pts[i + 1].ts) : PL + cW,
+        state: pts[i].state,
+      });
+    }
+    ctx.font = '8px sans-serif'; ctx.textAlign = 'center';
+    for (const seg of segments) {
+      const segW = seg.x1 - seg.x0;
+      if (segW < 30) continue;
+      const color = STATE_COLOR[seg.state] ?? '#52525b';
+      ctx.fillStyle = color + 'cc';
+      ctx.fillText(seg.state, seg.x0 + segW / 2, PT + cH / 2 + 4);
+    }
+
     const tickMs = pickTickMs(dur);
-    ctx.font = '8px monospace'; ctx.textAlign = 'center'; ctx.fillStyle = '#3f3f46';
+    ctx.font = '9px monospace'; ctx.textAlign = 'center'; ctx.fillStyle = '#52525b';
     for (let el = 0; el <= dur + tickMs * 0.01; el += tickMs) {
       const x = PL + cW * el / dur;
-      ctx.strokeStyle = 'rgba(255,255,255,0.06)'; ctx.lineWidth = 1;
-      ctx.beginPath(); ctx.moveTo(x, PT); ctx.lineTo(x, PT + cH); ctx.stroke();
-      ctx.fillStyle = '#3f3f46';
-      ctx.fillText(fmtTick(el), Math.min(x, W - PR), PT + cH + PB - 6);
+      ctx.fillText(fmtTick(el), Math.min(x, W - PR), PT + cH + PB - 7);
     }
   }
 
-  // ── Actions ────────────────────────────────────────────────────────────
+  // ── Actions ───────────────────────────────────────────────────────────
 
   private _download() {
     const run   = this.run!;
@@ -368,7 +568,7 @@ export class AppRun extends LitElement {
   private _delete() {
     if (!this.run) return;
     deleteDeviceRun(this.run.id);
-    window.location.hash = '#sync';
+    window.location.hash = resolveRouterPath('sync');
   }
 
   // ── Styles ────────────────────────────────────────────────────────────
@@ -376,10 +576,10 @@ export class AppRun extends LitElement {
   static styles = css`
     :host {
       --bg:       #09090b;
-      --card:     #09090b;
-      --border:   #27272a;
+      --card:     #111113;
+      --border:   #58585f;
       --fg:       #fafafa;
-      --muted-fg: #71717a;
+      --muted-fg: #c4c4cc;
       --sans: 'Geist', 'Inter', system-ui, sans-serif;
       --mono: 'Share Tech Mono', monospace;
     }
@@ -419,7 +619,7 @@ export class AppRun extends LitElement {
       transition: color 0.15s, border-color 0.15s;
     }
 
-    .back-btn:hover { color: var(--fg); border-color: #52525b; }
+    .back-btn:hover { color: var(--fg); border-color: #72727a; }
 
     .page-title {
       font-size: 0.875rem;
@@ -443,7 +643,6 @@ export class AppRun extends LitElement {
       gap: 12px;
     }
 
-    /* ── Card ── */
     .card {
       background: var(--card);
       border: 1px solid var(--border);
@@ -466,27 +665,62 @@ export class AppRun extends LitElement {
       color: var(--muted-fg);
     }
 
-    /* ── Key metrics strip ── */
-    .metrics-strip {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 1px;
-      background: var(--border);
-      border-radius: 6px;
-      overflow: hidden;
-    }
-
-    .metric-cell {
-      background: var(--card);
-      padding: 10px 14px;
+    /* ── Hero ── */
+    .hero {
       display: flex;
       flex-direction: column;
-      gap: 2px;
-      flex: 1;
-      min-width: 90px;
+      gap: 4px;
+      padding: 4px 0 12px;
     }
 
-    .metric-label {
+    .hero-name {
+      font-size: 1.5rem;
+      font-weight: 700;
+      letter-spacing: -0.03em;
+      color: var(--fg);
+      line-height: 1.1;
+    }
+
+    .hero-meta {
+      font-family: var(--mono);
+      font-size: 0.72rem;
+      color: var(--muted-fg);
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-top: 2px;
+    }
+
+    .hero-meta span { display: flex; align-items: center; gap: 4px; }
+
+    /* ── Key stats ── */
+    .key-stat-wide {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 12px 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+    }
+
+    .key-stats {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+    }
+
+    .key-stat {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 12px 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+    }
+
+    .key-stat-label {
       font-size: 0.62rem;
       font-weight: 500;
       letter-spacing: 0.06em;
@@ -494,20 +728,56 @@ export class AppRun extends LitElement {
       color: var(--muted-fg);
     }
 
-    .metric-value {
+    .key-stat-value {
       font-family: var(--mono);
-      font-size: 0.95rem;
-      font-weight: 600;
-      color: var(--fg);
+      font-size: 1.125rem;
+      font-weight: 700;
+      letter-spacing: -0.01em;
+    }
+
+    .key-stat-sub {
+      font-family: var(--mono);
+      font-size: 0.65rem;
+      color: var(--muted-fg);
+    }
+
+    .key-stat-range {
+      font-family: var(--mono);
+      font-size: 0.6rem;
+      color: var(--muted-fg);
+      letter-spacing: 0.01em;
+    }
+
+    /* ── Upload badge ── */
+    .upload-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      font-size: 0.7rem;
+      font-family: var(--mono);
+      padding: 2px 8px;
+      border-radius: 4px;
+    }
+
+    .upload-badge.uploaded { color: #22c55e; background: rgba(34,197,94,0.08); border: 1px solid rgba(34,197,94,0.25); }
+    .upload-badge.pending  { color: var(--muted-fg); background: transparent; border: 1px solid var(--border); }
+    .upload-badge.error    { color: #f87171; background: rgba(239,68,68,0.08); border: 1px solid rgba(239,68,68,0.25); }
+
+    /* ── Cloud badge ── */
+    .cloud-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      font-size: 0.7rem;
+      font-family: var(--mono);
+      padding: 2px 8px;
+      border-radius: 4px;
+      color: #60a5fa;
+      background: rgba(59,130,246,0.08);
+      border: 1px solid rgba(59,130,246,0.2);
     }
 
     /* ── Info rows ── */
-    .info-rows {
-      display: flex;
-      flex-direction: column;
-      gap: 0;
-    }
-
     .info-row {
       display: flex;
       align-items: center;
@@ -534,66 +804,55 @@ export class AppRun extends LitElement {
       text-overflow: ellipsis;
     }
 
-    /* ── Upload badge ── */
-    .upload-badge {
-      display: inline-flex;
-      align-items: center;
-      gap: 5px;
-      font-size: 0.7rem;
-      font-family: var(--mono);
-      padding: 2px 8px;
-      border-radius: 4px;
-    }
-
-    .upload-badge.uploaded { color: #22c55e; background: rgba(34,197,94,0.08); border: 1px solid rgba(34,197,94,0.2); }
-    .upload-badge.pending  { color: #71717a;  background: rgba(113,113,122,0.08); border: 1px solid #27272a; }
-
     /* ── Charts ── */
     canvas {
       width: 100%;
-      height: 150px;
+      height: 170px;
       border-radius: 4px;
       display: block;
     }
 
-    canvas.state-canvas { height: 56px; }
+    canvas.state-canvas { height: 52px; }
 
     .chart-legend {
       display: flex;
-      gap: 14px;
+      gap: 16px;
       flex-wrap: wrap;
-      margin-top: 8px;
+      margin-top: 10px;
     }
 
     .legend-item {
       display: flex;
       align-items: center;
-      gap: 5px;
-      font-family: var(--mono);
-      font-size: 0.65rem;
-      color: var(--muted-fg);
+      gap: 6px;
     }
 
     .legend-swatch {
-      width: 14px; height: 2px;
-      border-radius: 1px;
-      flex-shrink: 0;
-    }
-
-    .legend-swatch.dashed { background: none !important; border-top: 2px dashed currentColor; }
-
-    .legend-dot {
-      width: 8px; height: 8px;
+      width: 16px; height: 2.5px;
       border-radius: 2px;
       flex-shrink: 0;
     }
 
-    .no-data {
+    .legend-swatch.dashed { background: none !important; border-top: 2.5px dashed currentColor; }
+
+    .legend-label {
       font-family: var(--mono);
-      font-size: 0.72rem;
+      font-size: 0.68rem;
       color: var(--muted-fg);
-      text-align: center;
-      padding: 20px 0;
+    }
+
+    .legend-value {
+      font-family: var(--mono);
+      font-size: 0.68rem;
+      color: var(--fg);
+      font-weight: 500;
+    }
+
+    /* State legend dots */
+    .legend-dot {
+      width: 8px; height: 8px;
+      border-radius: 2px;
+      flex-shrink: 0;
     }
 
     /* ── Map ── */
@@ -623,10 +882,18 @@ export class AppRun extends LitElement {
       align-items: center;
     }
 
-    .btn-sm:hover         { border-color: #52525b; color: var(--fg); }
-    .btn-sm.danger:hover  { border-color: #ef4444; color: #f87171; }
+    .btn-sm:hover        { border-color: #72727a; color: var(--fg); }
+    .btn-sm.danger:hover { border-color: #ef4444; color: #f87171; }
 
-    .not-found {
+    .no-data {
+      font-family: var(--mono);
+      font-size: 0.72rem;
+      color: var(--muted-fg);
+      text-align: center;
+      padding: 20px 0;
+    }
+
+    .state-msg {
       font-family: var(--mono);
       font-size: 0.85rem;
       color: var(--muted-fg);
@@ -635,49 +902,77 @@ export class AppRun extends LitElement {
     }
 
     @media (max-width: 480px) {
-      canvas { height: 120px; }
-      .metric-cell { min-width: 70px; }
+      canvas { height: 130px; }
+      .key-stats { grid-template-columns: repeat(2, 1fr); }
     }
   `;
 
   // ── Render ────────────────────────────────────────────────────────────
 
   render() {
-    if (this.notFound) return html`
+    if (this.loading) return html`
       <main>
         <div class="page-header">
           <a class="back-btn" href="${resolveRouterPath('sync')}">←</a>
-          <span class="page-title">Run not found</span>
+          <span class="page-title">Loading…</span>
         </div>
-        <p class="not-found">Run not found or deleted.</p>
-      </main>
-    `;
+        <p class="state-msg">Loading run from cloud…</p>
+      </main>`;
 
-    const run = this.run;
-    if (!run) return html``;
+    if (this.error || !this.run) return html`
+      <main>
+        <div class="page-header">
+          <a class="back-btn" href="${resolveRouterPath('sync')}">←</a>
+          <span class="page-title">Error</span>
+        </div>
+        <p class="state-msg">${this.error || 'Run not found.'}</p>
+      </main>`;
 
-    const runName    = run.meta?.tagId || `Run #${run.id}`;
-    const duration   = this._duration();
-    const lat        = run.meta.lat ? parseFloat(run.meta.lat) : null;
-    const lon        = run.meta.lon ? parseFloat(run.meta.lon) : null;
+    const run         = this.run;
+    const runName     = run.meta?.tagId || `Run #${run.id}`;
+    const duration    = this._duration();
+    const lat         = run.meta.lat ? parseFloat(run.meta.lat) : null;
+    const lon         = run.meta.lon ? parseFloat(run.meta.lon) : null;
     const hasLocation = lat !== null && lon !== null && !isNaN(lat) && !isNaN(lon) && (lat !== 0 || lon !== 0);
-
-    // Key metrics: last value of each present field
-    const keyMetrics = KEY_FIELDS
-      .filter(f => run.fields.includes(f))
-      .map(f => ({ field: f, val: lastVal(run, f) }))
-      .filter(m => m.val !== null);
-
-    // Chart groups that have at least one present field
-    const activeGroups = CHART_GROUPS.filter(g =>
-      g.series.some(s => run.fields.includes(s.field))
-    );
-
     const hasStates   = run.fields.includes('samplingState');
     const stateIdx    = run.fields.indexOf('samplingState');
-    const uniqueStates = stateIdx >= 0
-      ? [...new Set(run.rows.map(r => r[stateIdx]))]
-      : [];
+    const uniqueStates = stateIdx >= 0 ? [...new Set(run.rows.map(r => r[stateIdx]))] : [];
+    const activeGroups = CHART_GROUPS.filter(g => g.series.some(s => run.fields.includes(s.field)));
+
+    // Key stats
+    const pressureConvert = (v: number) => v / 100_000;
+    const flowSpAvg  = avgVal(run, 'flowrateSP');
+    const tempAvg    = avgVal(run, 'temperature');
+    const tempMin    = minVal(run, 'temperature');
+    const tempMax    = maxVal(run, 'temperature');
+    const humAvg     = avgVal(run, 'humidity');
+    const humMin     = minVal(run, 'humidity');
+    const humMax     = maxVal(run, 'humidity');
+    const presAvgRaw = avgVal(run, 'pressure');
+    const presMinRaw = minVal(run, 'pressure');
+    const presMaxRaw = maxVal(run, 'pressure');
+    const presAvg    = presAvgRaw !== null ? pressureConvert(presAvgRaw) : null;
+    const presMin    = presMinRaw !== null ? pressureConvert(presMinRaw) : null;
+    const presMax    = presMaxRaw !== null ? pressureConvert(presMaxRaw) : null;
+
+    const uploadBadge = !this.isCloud ? (
+      run.firebaseId
+        ? html`<span class="upload-badge uploaded">
+            <svg width="9" height="9" viewBox="0 0 24 24" fill="currentColor"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z"/></svg>
+            Uploaded
+          </span>`
+        : run.uploadError === 'duplicate'
+          ? html`<span class="upload-badge error">Duplicate tag</span>`
+          : html`<span class="upload-badge pending">Not uploaded</span>`
+    ) : html``;
+
+    const cloudBadge = this.isCloud ? html`
+      <span class="cloud-badge">
+        <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M19.35 10.04A7.49 7.49 0 0012 4C9.11 4 6.6 5.64 5.35 8.04A5.994 5.994 0 000 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96z"/>
+        </svg>
+        Cloud
+      </span>` : html``;
 
     return html`
       <main>
@@ -686,86 +981,85 @@ export class AppRun extends LitElement {
           <span class="page-title">${runName}</span>
           <div class="header-actions">
             <button class="btn-sm" @click=${this._download}>CSV</button>
-            <button class="btn-sm danger" @click=${this._delete}>Delete</button>
+            ${!this.isCloud ? html`
+              <button class="btn-sm danger" @click=${this._delete}>Delete</button>` : ''}
           </div>
         </div>
 
         <div class="content">
 
-          <!-- Key metrics -->
-          ${keyMetrics.length > 0 ? html`
-            <div class="metrics-strip">
-              ${keyMetrics.map(({ field, val }) => html`
-                <div class="metric-cell">
-                  <span class="metric-label">${FIELD_LABEL[field] ?? field}</span>
-                  <span class="metric-value">${val!.toFixed(FIELD_DEC[field] ?? 2)} ${FIELD_UNIT[field] ?? ''}</span>
-                </div>
-              `)}
-            </div>
-          ` : ''}
-
-          <!-- Run info -->
+          <!-- Hero -->
           <div class="card">
-            <div class="card-header">
-              <span class="card-title">Run Info</span>
-              ${run.firebaseId
-                ? html`<span class="upload-badge uploaded">
-                    <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z"/></svg>
-                    Uploaded
-                  </span>`
-                : html`<span class="upload-badge pending">Pending upload</span>`}
+            <div class="hero">
+              <span class="hero-name">${runName}</span>
+              <div class="hero-meta">
+                ${run.meta.startTime ? html`<span>${new Date(run.meta.startTime).toLocaleString()}</span>` : ''}
+                <span>⏱ ${fmtElapsed(duration)}</span>
+                <span>${run.rows.length} datapoints · ${run.meta.interval}ms interval</span>
+              </div>
             </div>
-            <div class="info-rows">
-              <div class="info-row">
-                <span class="info-label">Start</span>
-                <span class="info-value">${fmtDate(run.meta.startTime)}</span>
-              </div>
-              <div class="info-row">
-                <span class="info-label">Duration</span>
-                <span class="info-value">${fmtElapsed(duration)}</span>
-              </div>
-              <div class="info-row">
-                <span class="info-label">Interval</span>
-                <span class="info-value">${run.meta.interval} ms</span>
-              </div>
-              ${run.meta.tagId ? html`
-                <div class="info-row">
-                  <span class="info-label">Sample ID</span>
-                  <span class="info-value">${run.meta.tagId}</span>
-                </div>` : ''}
+            <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">
+              ${uploadBadge}
+              ${cloudBadge}
               ${hasLocation ? html`
-                <div class="info-row">
-                  <span class="info-label">Location</span>
-                  <span class="info-value">${lat!.toFixed(5)}, ${lon!.toFixed(5)}</span>
-                </div>` : ''}
+                <span style="font-family:var(--mono);font-size:0.65rem;color:var(--muted-fg);">
+                  📍 ${lat!.toFixed(5)}, ${lon!.toFixed(5)}
+                </span>` : ''}
             </div>
           </div>
 
-          <!-- Location map -->
-          ${hasLocation ? html`
-            <div class="card">
-              <div class="card-header"><span class="card-title">Location</span></div>
-              <iframe class="map-frame"
-                src="https://www.openstreetmap.org/export/embed.html?bbox=${lon! - 0.005},${lat! - 0.005},${lon! + 0.005},${lat! + 0.005}&layer=mapnik&marker=${lat},${lon}"
-                loading="lazy"></iframe>
-            </div>
-          ` : ''}
+          <!-- Key stats: flow setpoint (wide) -->
+          ${flowSpAvg !== null ? html`
+            <div class="key-stat-wide">
+              <span class="key-stat-label">Flow Setpoint</span>
+              <span class="key-stat-value" style="color:#f59e0b">${flowSpAvg.toFixed(3)}</span>
+              <span class="key-stat-sub">L/s</span>
+            </div>` : ''}
 
-          <!-- Sampling state timeline -->
+          <!-- Key stats: env 3-column -->
+          ${(tempAvg !== null || humAvg !== null || presAvg !== null) ? html`
+            <div class="key-stats">
+              ${tempAvg !== null ? html`
+                <div class="key-stat">
+                  <span class="key-stat-label">Temperature</span>
+                  <span class="key-stat-value" style="color:#f97316">${tempAvg.toFixed(1)}</span>
+                  ${(tempMin !== null && tempMax !== null) ? html`
+                    <span class="key-stat-range">${tempMin.toFixed(1)} — ${tempMax.toFixed(1)}</span>` : ''}
+                  <span class="key-stat-sub">°C</span>
+                </div>` : ''}
+              ${humAvg !== null ? html`
+                <div class="key-stat">
+                  <span class="key-stat-label">Humidity</span>
+                  <span class="key-stat-value" style="color:#06b6d4">${humAvg.toFixed(1)}</span>
+                  ${(humMin !== null && humMax !== null) ? html`
+                    <span class="key-stat-range">${humMin.toFixed(1)} — ${humMax.toFixed(1)}</span>` : ''}
+                  <span class="key-stat-sub">%RH</span>
+                </div>` : ''}
+              ${presAvg !== null ? html`
+                <div class="key-stat">
+                  <span class="key-stat-label">Pressure</span>
+                  <span class="key-stat-value" style="color:#6366f1">${presAvg.toFixed(4)}</span>
+                  ${(presMin !== null && presMax !== null) ? html`
+                    <span class="key-stat-range">${presMin.toFixed(4)} — ${presMax.toFixed(4)}</span>` : ''}
+                  <span class="key-stat-sub">bar</span>
+                </div>` : ''}
+            </div>` : ''}
+
+          <!-- State timeline -->
           ${hasStates ? html`
             <div class="card">
-              <div class="card-header"><span class="card-title">Sampling State</span></div>
+              <div class="card-header">
+                <span class="card-title">Sampling State</span>
+              </div>
               <canvas id="chart-states" class="state-canvas"></canvas>
-              <div class="chart-legend" style="margin-top:6px">
+              <div class="chart-legend" style="margin-top:8px">
                 ${uniqueStates.map(s => html`
                   <div class="legend-item">
                     <span class="legend-dot" style="background:${STATE_COLOR[s] ?? '#52525b'}"></span>
-                    ${s}
-                  </div>
-                `)}
+                    <span class="legend-label">${s}</span>
+                  </div>`)}
               </div>
-            </div>
-          ` : ''}
+            </div>` : ''}
 
           <!-- Multi-series charts -->
           ${activeGroups.map(group => {
@@ -778,18 +1072,64 @@ export class AppRun extends LitElement {
                 ${run.rows.length >= 2 ? html`
                   <canvas id="chart-${group.id}"></canvas>
                   <div class="chart-legend">
-                    ${presentSeries.map(s => html`
-                      <div class="legend-item">
-                        <span class="legend-swatch ${s.dashed ? 'dashed' : ''}"
-                          style="${s.dashed ? `color:${s.color}` : `background:${s.color}`}"></span>
-                        ${s.label}${s.normalize ? ' ·norm' : ''}
-                      </div>
-                    `)}
-                  </div>
-                ` : html`<div class="no-data">Not enough data.</div>`}
+                    ${presentSeries.map(s => {
+                      const last = lastVal(run, s.field);
+                      const converted = (last !== null && s.convert) ? s.convert(last) : last;
+                      return html`
+                        <div class="legend-item">
+                          <span class="legend-swatch ${s.dashed ? 'dashed' : ''}"
+                            style="${s.dashed ? `color:${s.color}` : `background:${s.color}`}"></span>
+                          <span class="legend-label">${s.label}</span>
+                          ${converted !== null ? html`
+                            <span class="legend-value">${converted.toFixed(2)} ${s.unit}</span>` : ''}
+                        </div>`;
+                    })}
+                  </div>` : html`<div class="no-data">Not enough data.</div>`}
               </div>
             `;
           })}
+
+          <!-- Location map -->
+          ${hasLocation ? html`
+            <div class="card">
+              <div class="card-header"><span class="card-title">Location</span></div>
+              <iframe class="map-frame"
+                src="https://www.openstreetmap.org/export/embed.html?bbox=${lon! - 0.005},${lat! - 0.005},${lon! + 0.005},${lat! + 0.005}&layer=mapnik&marker=${lat},${lon}"
+                loading="lazy"></iframe>
+            </div>` : ''}
+
+          <!-- Details -->
+          <div class="card">
+            <div class="card-header"><span class="card-title">Details</span></div>
+            ${run.meta.startTime ? html`
+              <div class="info-row">
+                <span class="info-label">Start time</span>
+                <span class="info-value">${new Date(run.meta.startTime).toLocaleString()}</span>
+              </div>` : ''}
+            <div class="info-row">
+              <span class="info-label">Duration</span>
+              <span class="info-value">${fmtElapsed(duration)}</span>
+            </div>
+            <div class="info-row">
+              <span class="info-label">Datapoints</span>
+              <span class="info-value">${run.rows.length} × ${run.meta.interval}ms</span>
+            </div>
+            ${run.meta.tagId ? html`
+              <div class="info-row">
+                <span class="info-label">Sample ID</span>
+                <span class="info-value">${run.meta.tagId}</span>
+              </div>` : ''}
+            ${run.cloudUploadedAt ? html`
+              <div class="info-row">
+                <span class="info-label">Uploaded</span>
+                <span class="info-value">${new Date(run.cloudUploadedAt).toLocaleString()}</span>
+              </div>` : ''}
+            ${!this.isCloud ? html`
+              <div class="info-row">
+                <span class="info-label">Downloaded</span>
+                <span class="info-value">${new Date(run.downloadedAt).toLocaleString()}</span>
+              </div>` : ''}
+          </div>
 
         </div>
       </main>

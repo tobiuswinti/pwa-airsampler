@@ -87,15 +87,18 @@ export function onDeviceRunsChanged(fn: () => void): () => void {
   };
 }
 
-/** Parse a meta line like "startTime=1700000000000,interval=1000,tagId=ABC,lat=0,lon=0,states=..." */
+/** Parse a meta line like "startTime=1711400000,interval=1000,tagId=ABC,lat=0,lon=0,states=..." */
 export function parseMeta(metaLine: string): RunMeta {
   const kv: Record<string, string> = {};
   for (const part of metaLine.split(',')) {
     const eq = part.indexOf('=');
     if (eq >= 0) kv[part.slice(0, eq).trim()] = part.slice(eq + 1).trim();
   }
+  // Device emits startTime in Unix seconds; normalise to ms for JS Date compatibility.
+  const rawStart = Number(kv['startTime'] ?? 0);
+  const startTime = rawStart < 1e12 ? rawStart * 1000 : rawStart;
   return {
-    startTime: Number(kv['startTime'] ?? 0),
+    startTime,
     interval:  Number(kv['interval']  ?? 1000),
     tagId:     kv['tagId']  ?? '',
     lat:       kv['lat']    ?? '',

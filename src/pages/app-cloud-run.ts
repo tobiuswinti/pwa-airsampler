@@ -297,7 +297,7 @@ export class AppCloudRun extends LitElement {
 
   static styles = css`
     :host {
-      --bg: #09090b; --card: #09090b; --border: #27272a; --fg: #fafafa; --muted-fg: #71717a;
+      --bg: #09090b; --card: #111113; --border: #58585f; --fg: #fafafa; --muted-fg: #c4c4cc;
       --sans: 'Geist', 'Inter', system-ui, sans-serif; --mono: 'Share Tech Mono', monospace;
     }
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }

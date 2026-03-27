@@ -19,6 +19,7 @@ export interface LiveState {
   voltage: number; current: number; soc: number; power: number; tte: number;
   fanRpm: number; temperature: number; humidity: number; pressure: number;
   servoMm: number; flowrate: number; flowrateSP: number; samplingState: string;
+  elapsedS: number; remainingS: number;
 }
 
 // ── Line buffer ────────────────────────────────────────────────────────────
@@ -59,6 +60,8 @@ class BleService extends EventTarget {
   private pending: PendingCmd | null = null;
   private cmdBusy = false;
 
+  private _prevSamplingState: string | null = null;
+
   private cmdLineBuffer   = makeLineBuffer(l => this._handleCmdLine(l));
   private logLineBuffer   = makeLineBuffer(l => {
     this.sysLog = [...this.sysLog.slice(-299), l];
@@ -66,8 +69,15 @@ class BleService extends EventTarget {
   });
   private stateLineBuffer = makeLineBuffer(l => {
     try {
-      this.liveState = JSON.parse(l) as LiveState;
+      const next = JSON.parse(l) as LiveState;
+      const prev = this._prevSamplingState;
+      this._prevSamplingState = next.samplingState;
+      this.liveState = next;
       this.dispatchEvent(new CustomEvent('state-changed'));
+      // Re-fetch run list when a sampling cycle finishes
+      if (prev === 'running' && next.samplingState !== 'running') {
+        this._refreshRunList();
+      }
     } catch { /* ignore */ }
   });
 
@@ -120,6 +130,7 @@ class BleService extends EventTarget {
     this.liveState    = null;
     this.unsyncedCount = 0;
     this.deviceRunIds  = [];
+    this._prevSamplingState = null;
     this._setStatus('disconnected');
   }
 
@@ -132,6 +143,25 @@ class BleService extends EventTarget {
   }
 
   // ── Internals ─────────────────────────────────────────────────────────────
+
+  private async _refreshRunList() {
+    try {
+      const lines = await this.sendCmd('listRuns');
+      for (const l of lines) {
+        const t = l.trim();
+        if (!t.startsWith('{')) continue;
+        try {
+          const j = JSON.parse(t);
+          if (Array.isArray(j['runs'])) {
+            const ids: number[] = (j['runs'] as unknown[]).map(Number);
+            this.deviceRunIds  = ids;
+            this.unsyncedCount = ids.filter(id => !hasDeviceRun(id)).length;
+            this.dispatchEvent(new CustomEvent('sync-check-changed'));
+          }
+        } catch { /* ignore */ }
+      }
+    } catch { /* ignore */ }
+  }
 
   private async _initAfterConnect() {
     await this.sendCmd(`setTime -ts ${Math.floor(Date.now() / 1000)}`);

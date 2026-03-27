@@ -29,9 +29,9 @@ export class BleStatusBar extends LitElement {
       position: sticky;
       top: 0;
       z-index: 200;
-      --border:   #27272a;
+      --border:   #58585f;
       --fg:       #fafafa;
-      --muted-fg: #71717a;
+      --muted-fg: #c4c4cc;
       --mono: 'Share Tech Mono', monospace;
       --sans: 'Geist', 'Inter', system-ui, sans-serif;
     }

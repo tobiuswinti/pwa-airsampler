@@ -16,7 +16,7 @@ export default defineConfig({
       injectRegister: 'auto',
       manifest: false, // manifest.json in /public is used as-is
       workbox: {
-        globPatterns: ['**/*.{html,js,css,json,png,svg,ico,woff2,woff,ttf}'],
+        globPatterns: ['**/*.{html,js,css,json,png,jpg,jpeg,svg,ico,woff2,woff,ttf}'],
         navigateFallback: '/pwa-airsampler/index.html',
         runtimeCaching: [],
       },

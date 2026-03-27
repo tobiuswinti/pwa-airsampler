@@ -8,10 +8,10 @@ export class AppAbout extends LitElement {
   static styles = css`
     :host {
       --bg:       #09090b;
-      --card:     #09090b;
-      --border:   #27272a;
+      --card:     #111113;
+      --border:   #58585f;
       --fg:       #fafafa;
-      --muted-fg: #71717a;
+      --muted-fg: #c4c4cc;
       --sans: 'Geist', 'Inter', system-ui, sans-serif;
       --mono: 'Share Tech Mono', monospace;
     }
@@ -298,13 +298,13 @@ export class AppAbout extends LitElement {
             <div class="author">
               <div class="author-body">
                 <span class="author-name">Tobias Mäder</span>
-                <span class="author-role">Embedded software · User interface</span>
+                <span class="author-role">Software Engineering</span>
               </div>
             </div>
             <div class="author">
               <div class="author-body">
                 <span class="author-name">Nathaniel Walser</span>
-                <span class="author-role">Hardware design</span>
+                <span class="author-role">Hardware Engineering, Process Engineering</span>
               </div>
               <a class="author-link" href="https://www.linkedin.com/in/nathaniel-walser/" target="_blank" rel="noopener">LinkedIn</a>
             </div>

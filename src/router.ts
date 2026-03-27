@@ -67,17 +67,11 @@ const routes: Route[] = [
     load: () => import('./pages/app-run.js'),
   },
   {
-    hash: '#sample',
-    title: 'AirSampler — Sample Lookup',
-    render: () => html`<app-sample></app-sample>`,
-    load: () => import('./pages/app-sample.js'),
-  },
-  {
     hash: '#cloud-run/',
     prefix: true,
     title: 'AirSampler — Cloud Run',
-    render: () => html`<app-cloud-run></app-cloud-run>`,
-    load: () => import('./pages/app-cloud-run.js'),
+    render: () => html`<app-run></app-run>`,
+    load: () => import('./pages/app-run.js'),
   },
 ];
 
