@@ -155,13 +155,6 @@ export class AppControl extends LitElement {
   }
 
   /* ── Step state helpers ── */
-  private _stepAccent(s: StepStatus): string {
-    if (s === 'ok')      return '#22c55e';
-    if (s === 'error')   return '#ef4444';
-    if (s === 'running') return '#f59e0b';
-    return 'transparent';
-  }
-
   private _stepIcon(s: StepStatus) {
     if (s === 'ok')    return html`<svg width="14" height="14" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="7" stroke="#22c55e" stroke-width="1.5"/><path d="M5 8l2 2 4-4" stroke="#22c55e" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
     if (s === 'error') return html`<svg width="14" height="14" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="7" stroke="#ef4444" stroke-width="1.5"/><path d="M6 6l4 4M10 6l-4 4" stroke="#ef4444" stroke-width="1.5" stroke-linecap="round"/></svg>`;
