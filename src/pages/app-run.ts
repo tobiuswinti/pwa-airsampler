@@ -48,8 +48,37 @@ const CHART_GROUPS: ChartGroup[] = [
 ];
 
 const STATE_COLOR: Record<string, string> = {
-  running: '#22c55e', paused: '#f59e0b', waiting: '#3b82f6', idle: '#52525b',
+  IDLE:     '#52525b',
+  OPENING:  '#f59e0b',
+  WAITING:  '#3b82f6',
+  RUNNING:  '#22c55e',
+  PAUSED:   '#f97316',
+  RESUMING: '#8b5cf6',
+  CLOSING:  '#eab308',
 };
+
+/** Maps numeric samplingState enum values to names (matches device SamplingState enum). */
+const STATE_NAMES: Record<string, string> = {
+  '0': 'IDLE', '1': 'RUNNING', '2': 'PAUSED',
+  '3': 'WAITING', '4': 'OPENING', '5': 'RESUMING', '6': 'CLOSING',
+};
+
+function resolveStateName(raw: string): string {
+  return STATE_NAMES[raw] ?? raw.toUpperCase();
+}
+
+const STATE_PALETTE = ['#22c55e', '#3b82f6', '#f59e0b', '#8b5cf6', '#06b6d4', '#ef4444'];
+
+function resolveStateColor(state: string, uniqueStates: string[]): string {
+  if (STATE_COLOR[state]) return STATE_COLOR[state];
+  const idx = uniqueStates.indexOf(state);
+  return STATE_PALETTE[idx % STATE_PALETTE.length];
+}
+
+/** Normalize a timestamp to milliseconds. Device reports Unix seconds (~1.7e9). */
+function toMs(ts: number): number {
+  return ts < 2e10 ? ts * 1000 : ts;
+}
 
 // ── Helper functions ──────────────────────────────────────────────────────
 
@@ -325,7 +354,7 @@ export class AppRun extends LitElement {
       const timestamps: number[] = [];
       for (const row of run.rows) {
         const t = Number(row[tsIdx]);
-        if (isFinite(t)) timestamps.push(t);
+        if (isFinite(t)) timestamps.push(toMs(t));
       }
       if (timestamps.length < 2) continue;
 
@@ -366,7 +395,7 @@ export class AppRun extends LitElement {
     const stateIdx = run.fields.indexOf('samplingState');
     if (stateIdx >= 0) {
       const pts = run.rows
-        .map(row => ({ ts: Number(row[tsIdx]), state: String(row[stateIdx]) }))
+        .map(row => ({ ts: Number(row[tsIdx]), state: resolveStateName(String(row[stateIdx])) }))
         .filter(p => isFinite(p.ts));
       if (pts.length >= 2) this._drawStateChart('chart-states', pts);
     }
@@ -561,7 +590,7 @@ export class AppRun extends LitElement {
     }
   }
 
-  private _drawStateChart(canvasId: string, pts: { ts: number; state: string }[]) {
+  private _drawStateChart(canvasId: string, ptsRaw: { ts: number; state: string }[]) {
     const canvas = this.shadowRoot?.querySelector<HTMLCanvasElement>(`#${canvasId}`);
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
@@ -574,8 +603,12 @@ export class AppRun extends LitElement {
     canvas.height = rect.height * dpr;
     ctx.scale(dpr, dpr);
 
+    // Normalize timestamps to ms
+    const pts = ptsRaw.map(p => ({ ts: toMs(p.ts), state: p.state }));
+    const uniqueStates = [...new Set(pts.map(p => p.state))];
+
     const W = rect.width, H = rect.height;
-    const PL = 48, PR = 12, PT = 4, PB = 24;
+    const PL = 0, PR = 0, PT = 0, PB = 20;
     const cW = W - PL - PR, cH = H - PT - PB;
 
     ctx.fillStyle = '#09090b';
@@ -585,37 +618,46 @@ export class AppRun extends LitElement {
     const dur    = Math.max(tEnd - tStart, 1);
     const tsToX  = (ts: number) => PL + cW * (ts - tStart) / dur;
 
+    // Draw filled segments (progress-bar style)
     for (let i = 0; i < pts.length; i++) {
       const x0    = tsToX(pts[i].ts);
       const x1    = i < pts.length - 1 ? tsToX(pts[i + 1].ts) : PL + cW;
-      const color = STATE_COLOR[pts[i].state] ?? '#52525b';
-      ctx.fillStyle = color + '2a'; ctx.fillRect(x0, PT, x1 - x0, cH);
-      ctx.fillStyle = color;        ctx.fillRect(x0, PT, x1 - x0, 3);
+      const color = resolveStateColor(pts[i].state, uniqueStates);
+      ctx.fillStyle = color + '55';
+      ctx.fillRect(x0, PT, x1 - x0, cH);
+      // Bold top stripe
+      ctx.fillStyle = color;
+      ctx.fillRect(x0, PT, x1 - x0, 4);
     }
 
-    // State labels
-    const segments: { x0: number; x1: number; state: string }[] = [];
+    // Draw thin dividers between state transitions
+    ctx.strokeStyle = '#09090b';
+    ctx.lineWidth = 1.5;
+    for (let i = 1; i < pts.length; i++) {
+      if (pts[i].state !== pts[i - 1].state) {
+        const x = tsToX(pts[i].ts);
+        ctx.beginPath(); ctx.moveTo(x, PT); ctx.lineTo(x, PT + cH); ctx.stroke();
+      }
+    }
+
+    // State label inside each segment
+    ctx.font = 'bold 8px sans-serif'; ctx.textAlign = 'center';
     for (let i = 0; i < pts.length; i++) {
-      segments.push({
-        x0: tsToX(pts[i].ts),
-        x1: i < pts.length - 1 ? tsToX(pts[i + 1].ts) : PL + cW,
-        state: pts[i].state,
-      });
-    }
-    ctx.font = '8px sans-serif'; ctx.textAlign = 'center';
-    for (const seg of segments) {
-      const segW = seg.x1 - seg.x0;
-      if (segW < 30) continue;
-      const color = STATE_COLOR[seg.state] ?? '#52525b';
-      ctx.fillStyle = color + 'cc';
-      ctx.fillText(seg.state, seg.x0 + segW / 2, PT + cH / 2 + 4);
+      const x0 = tsToX(pts[i].ts);
+      const x1 = i < pts.length - 1 ? tsToX(pts[i + 1].ts) : PL + cW;
+      const segW = x1 - x0;
+      if (segW < 28) continue;
+      const color = resolveStateColor(pts[i].state, uniqueStates);
+      ctx.fillStyle = color;
+      ctx.fillText(pts[i].state, x0 + segW / 2, PT + cH / 2 + 4);
     }
 
+    // Time axis
     const tickMs = pickTickMs(dur);
     ctx.font = '9px monospace'; ctx.textAlign = 'center'; ctx.fillStyle = '#52525b';
     for (let el = 0; el <= dur + tickMs * 0.01; el += tickMs) {
       const x = PL + cW * el / dur;
-      ctx.fillText(fmtTick(el), Math.min(x, W - PR), PT + cH + PB - 7);
+      ctx.fillText(fmtTick(el), Math.min(x, W - PR - 4), PT + cH + PB - 5);
     }
   }
 
@@ -1015,7 +1057,7 @@ export class AppRun extends LitElement {
     const hasLocation = lat !== null && lon !== null && !isNaN(lat) && !isNaN(lon) && (lat !== 0 || lon !== 0);
     const hasStates   = run.fields.includes('samplingState');
     const stateIdx    = run.fields.indexOf('samplingState');
-    const uniqueStates = stateIdx >= 0 ? [...new Set(run.rows.map(r => r[stateIdx]))] : [];
+    const uniqueStates = stateIdx >= 0 ? [...new Set(run.rows.map(r => resolveStateName(String(r[stateIdx]))))] : [];
     const activeGroups = CHART_GROUPS.filter(g => g.series.some(s => run.fields.includes(s.field)));
 
     // Key stats
@@ -1145,7 +1187,7 @@ export class AppRun extends LitElement {
               <div class="chart-legend" style="margin-top:8px">
                 ${uniqueStates.map(s => html`
                   <div class="legend-item">
-                    <span class="legend-dot" style="background:${STATE_COLOR[s] ?? '#52525b'}"></span>
+                    <span class="legend-dot" style="background:${resolveStateColor(s, uniqueStates)}"></span>
                     <span class="legend-label">${s}</span>
                   </div>`)}
               </div>

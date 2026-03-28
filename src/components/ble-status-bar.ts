@@ -111,10 +111,13 @@ export class BleStatusBar extends LitElement {
       flex-shrink: 0;
     }
 
-    .sampling-badge.running { color: #22c55e; border-color: rgba(34,197,94,0.3); background: rgba(34,197,94,0.08); }
-    .sampling-badge.paused  { color: #f59e0b; border-color: rgba(245,158,11,0.3); background: rgba(245,158,11,0.08); }
-    .sampling-badge.waiting { color: #3b82f6; border-color: rgba(59,130,246,0.3); background: rgba(59,130,246,0.08); }
-    .sampling-badge.idle    { color: #52525b; border-color: #3f3f46; }
+    .sampling-badge.running  { color: #22c55e; border-color: rgba(34,197,94,0.3);   background: rgba(34,197,94,0.08);   }
+    .sampling-badge.paused   { color: #f97316; border-color: rgba(249,115,22,0.3);  background: rgba(249,115,22,0.08);  }
+    .sampling-badge.waiting  { color: #3b82f6; border-color: rgba(59,130,246,0.3);  background: rgba(59,130,246,0.08);  }
+    .sampling-badge.opening  { color: #f59e0b; border-color: rgba(245,158,11,0.3);  background: rgba(245,158,11,0.08);  }
+    .sampling-badge.resuming { color: #8b5cf6; border-color: rgba(139,92,246,0.3);  background: rgba(139,92,246,0.08);  }
+    .sampling-badge.closing  { color: #eab308; border-color: rgba(234,179,8,0.3);   background: rgba(234,179,8,0.08);   }
+    .sampling-badge.idle     { color: #52525b; border-color: #3f3f46; }
 
     .spacer { flex: 1; }
 
@@ -219,7 +222,7 @@ export class BleStatusBar extends LitElement {
             <span class="metric"><b>${s.humidity.toFixed(0)}</b>%RH</span>
             <span class="metric"><b>${s.flowrate.toFixed(3)}</b> L/s</span>
           </div>
-          <span class="sampling-badge ${s.samplingState}">${s.samplingState}</span>
+          <span class="sampling-badge ${s.samplingState.toLowerCase()}">${s.samplingState}</span>
           <div class="sep"></div>
         ` : ''}
 

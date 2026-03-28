@@ -247,7 +247,8 @@ export class AppHome extends LitElement {
   render() {
     const connected  = this.connStatus === 'connected';
     const bleClass   = connected ? '' : 'disabled';
-    const isSampling = connected && this.liveState?.samplingState === 'running';
+    const sampState  = this.liveState?.samplingState;
+    const isSampling = connected && !!sampState && sampState !== 'IDLE';
     const syncBadge  = this.unsyncedCount + this.pendingUpload;
 
     return html`
@@ -340,31 +341,20 @@ export class AppHome extends LitElement {
             <span class="nav-arrow">›</span>
           </a>
 
+          <a class="nav-card" href="${resolveRouterPath('lookup')}">
+            <div class="nav-icon" style="background:rgba(255,255,255,0.06);">
+              <svg viewBox="0 0 24 24" fill="#a1a1aa"><path d="M17.5 2h-11C5.12 2 4 3.12 4 4.5v15C4 20.88 5.12 22 6.5 22h11c1.38 0 2.5-1.12 2.5-2.5v-15C20 3.12 18.88 2 17.5 2zm-5 17c-.83 0-1.5-.67-1.5-1.5S11.67 16 12.5 16s1.5.67 1.5 1.5S13.33 19 12.5 19zm3.5-5h-7v-1.5c0-1.93 1.57-3.5 3.5-3.5S16 10.57 16 12.5V14zm-3.5-5C10.57 9 9 7.43 9 5.5h1.5c0 1.1.9 2 2 2s2-.9 2-2H16c0 1.93-1.57 3.5-3.5 3.5z"/></svg>
+            </div>
+            <div class="nav-text">
+              <span class="nav-label">Tag Lookup</span>
+              <span class="nav-desc">Find runs by NFC tag or tag ID</span>
+            </div>
+            <span class="nav-arrow">›</span>
+          </a>
+
           ${this.adminMode ? html`
             <div class="separator"></div>
             <span class="group-label">Admin</span>
-
-            <a class="nav-card ${bleClass}" href="${resolveRouterPath('ble')}">
-              <div class="nav-icon" style="background:rgba(255,255,255,0.06);">
-                <svg viewBox="0 0 24 24" fill="#a1a1aa"><path d="M17.71 7.71L12 2h-1v7.59L6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 11 14.41V22h1l5.71-5.71-4.3-4.29 4.3-4.29zM13 5.83l1.88 1.88L13 9.59V5.83zm1.88 10.46L13 18.17v-3.76l1.88 1.88z"/></svg>
-              </div>
-              <div class="nav-text">
-                <span class="nav-label">BLE Control</span>
-                <span class="nav-desc">Send raw BLE commands to device</span>
-              </div>
-              <span class="nav-arrow">›</span>
-            </a>
-
-            <a class="nav-card ${bleClass}" href="${resolveRouterPath('device')}">
-              <div class="nav-icon" style="background:rgba(255,255,255,0.06);">
-                <svg viewBox="0 0 24 24" fill="#a1a1aa"><path d="M22 9V7h-2V5c0-1.1-.9-2-2-2H4c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2v-2h2v-2h-2v-2h2v-2h-2V9h2zm-4 10H4V5h14v14z"/><path d="M6 13h5v4H6zm6-6h3v3h-3zM6 7h5v5H6zm6 4h3v6h-3z"/></svg>
-              </div>
-              <div class="nav-text">
-                <span class="nav-label">Device Settings</span>
-                <span class="nav-desc">Configure device parameters</span>
-              </div>
-              <span class="nav-arrow">›</span>
-            </a>
 
             <a class="nav-card ${bleClass}" href="${resolveRouterPath('admin')}">
               <div class="nav-icon" style="background:rgba(255,255,255,0.06);">

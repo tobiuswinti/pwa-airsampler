@@ -24,18 +24,6 @@ const routes: Route[] = [
     load: () => import('./pages/app-about/app-about.js'),
   },
   {
-    hash: '#ble',
-    title: 'AirSampler — BLE Control',
-    render: () => html`<app-ble></app-ble>`,
-    load: () => import('./pages/app-ble.js'),
-  },
-  {
-    hash: '#device',
-    title: 'AirSampler — Device',
-    render: () => html`<app-device></app-device>`,
-    load: () => import('./pages/app-device.js'),
-  },
-  {
     hash: '#control',
     title: 'AirSampler — Start Sampling',
     render: () => html`<app-control></app-control>`,
@@ -78,6 +66,12 @@ const routes: Route[] = [
     title: 'AirSampler — Cloud Run',
     render: () => html`<app-run></app-run>`,
     load: () => import('./pages/app-run.js'),
+  },
+  {
+    hash: '#lookup',
+    title: 'AirSampler — Tag Lookup',
+    render: () => html`<app-lookup></app-lookup>`,
+    load: () => import('./pages/app-lookup.js'),
   },
 ];
 

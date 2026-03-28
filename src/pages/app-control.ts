@@ -14,9 +14,11 @@ export class AppControl extends LitElement {
   @state() private tagId     = '';
   @state() private lat       = '';
   @state() private lon       = '';
-  @state() private flowrateSP = '1.0';
-  @state() private durationH  = '1';
-  @state() private delayH     = '';
+  @state() private flowrateSP   = '1.0';
+  @state() private durationH    = '1';
+  @state() private delayH       = '';
+  @state() private maxHumidity  = '100';
+  @state() private minSoC       = '2';
 
   @state() private nfcScanning  = false;
   @state() private nfcAvailable = false;
@@ -74,9 +76,11 @@ export class AppControl extends LitElement {
 
     this.stepSampling = 'running';
     let cmd = 'startSampling';
-    if (this.flowrateSP) cmd += ` -flowrate ${this.flowrateSP}`;
-    if (this.durationH)  cmd += ` -durationS ${Math.round(parseFloat(this.durationH) * 3600)}`;
-    if (this.delayH)     cmd += ` -delayS ${Math.round(parseFloat(this.delayH) * 3600)}`;
+    if (this.flowrateSP)  cmd += ` -flowrate ${this.flowrateSP}`;
+    if (this.durationH)   cmd += ` -durationS ${Math.round(parseFloat(this.durationH) * 3600)}`;
+    if (this.delayH)      cmd += ` -delayS ${Math.round(parseFloat(this.delayH) * 3600)}`;
+    if (this.maxHumidity) cmd += ` -maxHumidity ${this.maxHumidity}`;
+    if (this.minSoC)      cmd += ` -minSoC ${this.minSoC}`;
     const sampLines = await bleService.sendCmd(cmd);
     if (!this._isOk(sampLines)) {
       this.stepSampling = 'error'; this.stepError = sampLines[0] ?? 'startSampling failed';
@@ -631,6 +635,46 @@ export class AppControl extends LitElement {
                     @input=${(e: Event) => { this.flowrateSP = (e.target as HTMLInputElement).value; }}
                     ?disabled=${!this.connected} />
                   <span class="unit">L/s</span>
+                </div>
+              </div>
+
+              <div class="param-group">
+                <div class="param-label">Max Humidity</div>
+                <div class="preset-row">
+                  ${['60','80','100'].map(v => html`
+                    <button class="preset ${this.maxHumidity === v ? 'active' : ''}"
+                      ?disabled=${!this.connected}
+                      @click=${() => { this.maxHumidity = v; }}>
+                      ${v}%
+                    </button>
+                  `)}
+                </div>
+                <div class="field-row">
+                  <input class="input" type="number" placeholder="100" step="1" min="0" max="100"
+                    .value=${this.maxHumidity}
+                    @input=${(e: Event) => { this.maxHumidity = (e.target as HTMLInputElement).value; }}
+                    ?disabled=${!this.connected} />
+                  <span class="unit">%</span>
+                </div>
+              </div>
+
+              <div class="param-group">
+                <div class="param-label">Min State of Charge</div>
+                <div class="preset-row">
+                  ${['2','5','10','20'].map(v => html`
+                    <button class="preset ${this.minSoC === v ? 'active' : ''}"
+                      ?disabled=${!this.connected}
+                      @click=${() => { this.minSoC = v; }}>
+                      ${v}%
+                    </button>
+                  `)}
+                </div>
+                <div class="field-row">
+                  <input class="input" type="number" placeholder="2" step="1" min="0" max="100"
+                    .value=${this.minSoC}
+                    @input=${(e: Event) => { this.minSoC = (e.target as HTMLInputElement).value; }}
+                    ?disabled=${!this.connected} />
+                  <span class="unit">%</span>
                 </div>
               </div>
 

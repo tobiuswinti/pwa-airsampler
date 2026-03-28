@@ -70,12 +70,13 @@ class BleService extends EventTarget {
   private stateLineBuffer = makeLineBuffer(l => {
     try {
       const next = JSON.parse(l) as LiveState;
+      next.samplingState = next.samplingState?.toUpperCase() ?? 'IDLE';
       const prev = this._prevSamplingState;
       this._prevSamplingState = next.samplingState;
       this.liveState = next;
       this.dispatchEvent(new CustomEvent('state-changed'));
       // Re-fetch run list when a sampling cycle finishes
-      if (prev === 'running' && next.samplingState !== 'running') {
+      if (prev === 'RUNNING' && next.samplingState !== 'RUNNING') {
         this._refreshRunList();
       }
     } catch { /* ignore */ }

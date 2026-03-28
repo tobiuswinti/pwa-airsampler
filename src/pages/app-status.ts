@@ -27,7 +27,7 @@ export class AppStatus extends LitElement {
   private _onState  = () => {
     this.liveState = bleService.liveState;
     const s = bleService.liveState;
-    if (s && s.samplingState !== 'running' && s.samplingState !== 'waiting' && s.samplingState !== 'paused') {
+    if (s && s.samplingState === 'IDLE') {
       this._stopConfirm = false;
     }
     if (s) {
@@ -162,10 +162,13 @@ export class AppStatus extends LitElement {
   }
 
   private _stateColor(s: string): { color: string; bg: string; border: string } {
-    if (s === 'running') return { color: '#22c55e', bg: 'rgba(34,197,94,0.12)',   border: 'rgba(34,197,94,0.3)' };
-    if (s === 'paused')  return { color: '#f59e0b', bg: 'rgba(245,158,11,0.12)',  border: 'rgba(245,158,11,0.3)' };
-    if (s === 'waiting') return { color: '#3b82f6', bg: 'rgba(59,130,246,0.12)',  border: 'rgba(59,130,246,0.3)' };
-    return                      { color: '#71717a', bg: 'rgba(113,113,122,0.08)', border: 'rgba(113,113,122,0.3)' };
+    if (s === 'RUNNING')  return { color: '#22c55e', bg: 'rgba(34,197,94,0.12)',   border: 'rgba(34,197,94,0.3)'   };
+    if (s === 'PAUSED')   return { color: '#f97316', bg: 'rgba(249,115,22,0.12)',  border: 'rgba(249,115,22,0.3)'  };
+    if (s === 'WAITING')  return { color: '#3b82f6', bg: 'rgba(59,130,246,0.12)',  border: 'rgba(59,130,246,0.3)'  };
+    if (s === 'OPENING')  return { color: '#f59e0b', bg: 'rgba(245,158,11,0.12)',  border: 'rgba(245,158,11,0.3)'  };
+    if (s === 'RESUMING') return { color: '#8b5cf6', bg: 'rgba(139,92,246,0.12)',  border: 'rgba(139,92,246,0.3)'  };
+    if (s === 'CLOSING')  return { color: '#eab308', bg: 'rgba(234,179,8,0.12)',   border: 'rgba(234,179,8,0.3)'   };
+    return                       { color: '#71717a', bg: 'rgba(113,113,122,0.08)', border: 'rgba(113,113,122,0.3)' };
   }
 
   private _socColor(soc: number): string {
@@ -729,7 +732,7 @@ export class AppStatus extends LitElement {
                     <div class="hero-top">
                       <span class="state-badge"
                         style="color:${sc.color};background:${sc.bg};border-color:${sc.border};">
-                        <span class="badge-dot ${s.samplingState === 'running' ? 'pulse' : ''}"></span>
+                        <span class="badge-dot ${s.samplingState === 'RUNNING' ? 'pulse' : ''}"></span>
                         ${s.samplingState}
                       </span>
                       <span class="ts-label">${s.ts}</span>
@@ -782,21 +785,28 @@ export class AppStatus extends LitElement {
             const remainS  = s.remainingS ?? 0;
             const totalS   = elapsedS + remainS;
             const pct      = totalS > 0 ? Math.min(100, (elapsedS / totalS) * 100) : 0;
-            const isRunning = ss === 'running';
-            const isWaiting = ss === 'waiting';
-            const isPaused  = ss === 'paused';
-            const isActive  = isRunning || isWaiting || isPaused;
+            const isRunning   = ss === 'RUNNING';
+            const isWaiting   = ss === 'WAITING';
+            const isPaused    = ss === 'PAUSED';
+            const isTransient = ss === 'OPENING' || ss === 'RESUMING' || ss === 'CLOSING';
+            const isActive    = ss !== 'IDLE';
 
             return html`
               <div class="card">
                 <div class="sampling-state-row">
                   <div>
-                    ${isRunning || isPaused ? html`
+                    ${isRunning ? html`
                       <div class="sampling-elapsed-big">${this._fmtSec(elapsedS)}</div>
-                      <div class="sampling-elapsed-label">${isRunning ? 'elapsed' : 'paused at'}</div>
+                      <div class="sampling-elapsed-label">elapsed</div>
+                    ` : isPaused ? html`
+                      <div class="sampling-elapsed-big">${this._fmtSec(elapsedS)}</div>
+                      <div class="sampling-elapsed-label">paused at</div>
                     ` : isWaiting ? html`
                       <div class="sampling-elapsed-big">${this._fmtSec(remainS)}</div>
                       <div class="sampling-elapsed-label">starts in</div>
+                    ` : isTransient ? html`
+                      <div class="sampling-elapsed-big">${this._fmtSec(elapsedS)}</div>
+                      <div class="sampling-elapsed-label">${ss.toLowerCase()}…</div>
                     ` : html`
                       <div class="sampling-elapsed-big">—</div>
                       <div class="sampling-elapsed-label">not sampling</div>
@@ -804,7 +814,7 @@ export class AppStatus extends LitElement {
                   </div>
                   <span class="state-badge"
                     style="color:${sc.color};background:${sc.bg};border-color:${sc.border};">
-                    <span class="badge-dot ${isRunning ? 'pulse' : ''}"></span>
+                    <span class="badge-dot ${isRunning || isTransient ? 'pulse' : ''}"></span>
                     ${ss}
                   </span>
                 </div>
@@ -813,12 +823,12 @@ export class AppStatus extends LitElement {
                   ${isRunning ? html`
                     <div class="sampling-progress-fill"
                       style="background:${sc.color};width:${pct}%;transition:width 1s linear;"></div>
-                  ` : isWaiting ? html`
+                  ` : isWaiting || isTransient ? html`
                     <div class="sampling-progress-fill indeterminate"
-                      style="background:#3b82f6;opacity:0.6;"></div>
+                      style="background:${sc.color};opacity:0.6;"></div>
                   ` : isPaused ? html`
                     <div class="sampling-progress-fill"
-                      style="background:#f59e0b;width:${pct}%;opacity:0.5;"></div>
+                      style="background:#f97316;width:${pct}%;opacity:0.5;"></div>
                   ` : html`
                     <div style="width:100%;height:100%;background:#27272a;border-radius:3px;"></div>
                   `}
