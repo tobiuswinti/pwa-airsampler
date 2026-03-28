@@ -71,13 +71,24 @@ export class AppAbout extends LitElement {
     /* Hero */
     .hero {
       display: flex;
-      flex-direction: column;
-      gap: 6px;
+      flex-direction: row;
+      align-items: center;
+      gap: 16px;
       padding: 4px 0 8px;
     }
 
+    .hero-text {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      flex: 1;
+      min-width: 0;
+    }
+
     .device-img {
-      width: 100%;
+      width: 140px;
+      height: 180px;
+      flex-shrink: 0;
       border-radius: 10px;
       border: 1px solid var(--border);
       object-fit: contain;
@@ -236,12 +247,14 @@ export class AppAbout extends LitElement {
         <div class="content">
 
           <div class="hero">
+            <div class="hero-text">
+              <span class="hero-title">AirSampler</span>
+              <span class="hero-sub">
+                Progressive web app for controlling and monitoring the DNAir AirSampler device —
+                an ESP32-based environmental DNA air sampling system.
+              </span>
+            </div>
             <img class="device-img" src="/pwa-airsampler/assets/device/DeviceV8_2.jpg" alt="AirSampler device" />
-            <span class="hero-title">AirSampler</span>
-            <span class="hero-sub">
-              Progressive web app for controlling and monitoring the DNAir AirSampler device —
-              an ESP32-based environmental DNA air sampling system.
-            </span>
           </div>
 
           <!-- Features -->
