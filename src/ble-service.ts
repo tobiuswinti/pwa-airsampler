@@ -83,45 +83,68 @@ class BleService extends EventTarget {
   });
 
   // ── Connection ────────────────────────────────────────────────────────────
-  async connect(): Promise<void> {
+  async connect(name?: string): Promise<void> {
     if (!navigator.bluetooth) return;
     try {
       this._setStatus('connecting');
-
-      this.bleDevice = await navigator.bluetooth.requestDevice({
-        filters: [{ name: DEVICE_NAME }],
+      const device = await navigator.bluetooth.requestDevice({
+        filters: [{ name: name ?? DEVICE_NAME }],
         optionalServices: [SERVICE_UUID],
       });
-      this.bleDevice.addEventListener('gattserverdisconnected', () => this._onDisconnected());
-
-      const server = await this.bleDevice.gatt!.connect();
-      this.bleService = await server.getPrimaryService(SERVICE_UUID);
-      this.writeChar  = await this.bleService.getCharacteristic(CMD_WRITE);
-
-      const cmdChar = await this.bleService.getCharacteristic(CMD_NOTIFY);
-      cmdChar.addEventListener('characteristicvaluechanged', (e: Event) => {
-        this.cmdLineBuffer(new TextDecoder().decode((e.target as BluetoothRemoteGATTCharacteristic).value!));
-      });
-      await cmdChar.startNotifications();
-
-      const logChar = await this.bleService.getCharacteristic(LOG_NOTIFY);
-      logChar.addEventListener('characteristicvaluechanged', (e: Event) => {
-        this.logLineBuffer(new TextDecoder().decode((e.target as BluetoothRemoteGATTCharacteristic).value!));
-      });
-      await logChar.startNotifications();
-
-      const stateChar = await this.bleService.getCharacteristic(STATE_NOTIFY);
-      stateChar.addEventListener('characteristicvaluechanged', (e: Event) => {
-        this.stateLineBuffer(new TextDecoder().decode((e.target as BluetoothRemoteGATTCharacteristic).value!));
-      });
-      await stateChar.startNotifications();
-
-      this._setStatus('connected');
-      this._initAfterConnect();
+      await this._connectToDevice(device);
     } catch (err: any) {
       console.error('BLE connect failed:', err);
       this._setStatus('failed');
     }
+  }
+
+  // Connect silently to a previously-paired device by name (no browser picker).
+  // Returns false if the device isn't known yet (caller should fall back to connect()).
+  async connectByName(name: string): Promise<boolean> {
+    if (!navigator.bluetooth) return false;
+    try {
+      const bt = navigator.bluetooth as any;
+      const known: BluetoothDevice[] = bt.getDevices ? await bt.getDevices() : [];
+      const device = known.find(d => d.name === name) ?? null;
+      if (!device) return false;
+      this._setStatus('connecting');
+      await this._connectToDevice(device);
+      return true;
+    } catch (err: any) {
+      console.error('BLE connectByName failed:', err);
+      this._setStatus('failed');
+      return false;
+    }
+  }
+
+  private async _connectToDevice(device: BluetoothDevice): Promise<void> {
+    this.bleDevice = device;
+    this.bleDevice.addEventListener('gattserverdisconnected', () => this._onDisconnected());
+
+    const server = await this.bleDevice.gatt!.connect();
+    this.bleService = await server.getPrimaryService(SERVICE_UUID);
+    this.writeChar  = await this.bleService.getCharacteristic(CMD_WRITE);
+
+    const cmdChar = await this.bleService.getCharacteristic(CMD_NOTIFY);
+    cmdChar.addEventListener('characteristicvaluechanged', (e: Event) => {
+      this.cmdLineBuffer(new TextDecoder().decode((e.target as BluetoothRemoteGATTCharacteristic).value!));
+    });
+    await cmdChar.startNotifications();
+
+    const logChar = await this.bleService.getCharacteristic(LOG_NOTIFY);
+    logChar.addEventListener('characteristicvaluechanged', (e: Event) => {
+      this.logLineBuffer(new TextDecoder().decode((e.target as BluetoothRemoteGATTCharacteristic).value!));
+    });
+    await logChar.startNotifications();
+
+    const stateChar = await this.bleService.getCharacteristic(STATE_NOTIFY);
+    stateChar.addEventListener('characteristicvaluechanged', (e: Event) => {
+      this.stateLineBuffer(new TextDecoder().decode((e.target as BluetoothRemoteGATTCharacteristic).value!));
+    });
+    await stateChar.startNotifications();
+
+    this._setStatus('connected');
+    this._initAfterConnect();
   }
 
   disconnect(): void {

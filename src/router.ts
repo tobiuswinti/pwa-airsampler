@@ -79,6 +79,12 @@ const routes: Route[] = [
     render: () => html`<app-admin-runs></app-admin-runs>`,
     load: () => import('./pages/app-admin-runs.js'),
   },
+  {
+    hash: '#device-config',
+    title: 'AirSampler — Device Configuration',
+    render: () => html`<app-device-config></app-device-config>`,
+    load: () => import('./pages/app-device-config.js'),
+  },
 ];
 
 // ── Hash Router ───────────────────────────────────────────────────────────────

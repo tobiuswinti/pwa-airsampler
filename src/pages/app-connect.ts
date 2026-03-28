@@ -3,10 +3,16 @@ import { state, customElement } from 'lit/decorators.js';
 import { resolveRouterPath } from '../router';
 import { bleService, ConnStatus } from '../ble-service';
 
+type NfcScanStatus = 'unavailable' | 'scanning' | 'found' | 'no-match';
+
 @customElement('app-connect')
 export class AppConnect extends LitElement {
 
   @state() private connStatus: ConnStatus = bleService.connStatus;
+  @state() private nfcStatus: NfcScanStatus | null = null;
+  @state() private scannedName = '';
+
+  private _nfcAbort: AbortController | null = null;
 
   private _onStatus = () => {
     this.connStatus = bleService.connStatus;
@@ -18,11 +24,47 @@ export class AppConnect extends LitElement {
   connectedCallback() {
     super.connectedCallback();
     bleService.addEventListener('status-changed', this._onStatus);
+    this._startNfcScan();
   }
 
   disconnectedCallback() {
     super.disconnectedCallback();
     bleService.removeEventListener('status-changed', this._onStatus);
+    this._nfcAbort?.abort();
+  }
+
+  private async _startNfcScan() {
+    if (!('NDEFReader' in window)) { this.nfcStatus = 'unavailable'; return; }
+    try {
+      this._nfcAbort = new AbortController();
+      const reader = new (window as any).NDEFReader();
+      this.nfcStatus = 'scanning';
+      reader.onreading = async (e: any) => {
+        let name = '';
+        for (const record of e.message?.records ?? []) {
+          if (record.recordType === 'text') {
+            name = new TextDecoder().decode(record.data).trim();
+            break;
+          }
+        }
+        if (!name) name = (e.serialNumber ?? '').toUpperCase();
+        if (!name) return;
+
+        this._nfcAbort?.abort();
+        this.scannedName = name;
+        this.nfcStatus   = 'found';
+
+        // Try silent connect to a previously-paired device first
+        const ok = await bleService.connectByName(name);
+        if (!ok) {
+          // Device not previously paired — show manual connect button
+          this.nfcStatus = 'no-match';
+        }
+      };
+      await reader.scan({ signal: this._nfcAbort.signal });
+    } catch {
+      this.nfcStatus = 'unavailable';
+    }
   }
 
   static styles = css`
@@ -172,6 +214,12 @@ export class AppConnect extends LitElement {
     const connecting   = this.connStatus === 'connecting';
     const bleSupported = !!navigator.bluetooth;
 
+    const nfcLabel =
+      this.nfcStatus === 'scanning'  ? 'Scanning for RFID tag…' :
+      this.nfcStatus === 'found'     ? `Tag found: ${this.scannedName} — connecting…` :
+      this.nfcStatus === 'no-match'  ? `Tag: ${this.scannedName} — tap Connect to pair` :
+      null;
+
     return html`
       <main>
         <div class="page-header">
@@ -197,16 +245,22 @@ export class AppConnect extends LitElement {
             </div>
           </div>
 
-          <p class="status-text ${this.connStatus}">
-            ${connecting                           ? 'Scanning for AirSampler…'
-            : this.connStatus === 'failed'         ? 'Connection failed — try again'
-            : 'Tap to scan for nearby devices'}
-          </p>
+          ${nfcLabel ? html`
+            <p class="status-text ${this.nfcStatus === 'found' ? 'connecting' : ''}">
+              ${nfcLabel}
+            </p>
+          ` : html`
+            <p class="status-text ${this.connStatus}">
+              ${connecting                   ? 'Connecting to device…'
+              : this.connStatus === 'failed' ? 'Connection failed — try again'
+              : 'Hold an RFID tag to connect, or tap below'}
+            </p>
+          `}
 
           <button class="btn-connect"
             ?disabled=${!bleSupported || connecting}
-            @click=${() => bleService.connect()}>
-            ${connecting ? 'Connecting…' : 'Connect'}
+            @click=${() => bleService.connect(this.scannedName || undefined)}>
+            ${connecting ? 'Connecting…' : this.scannedName ? `Connect to ${this.scannedName}` : 'Connect'}
           </button>
 
         </div>
