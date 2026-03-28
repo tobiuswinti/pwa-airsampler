@@ -76,6 +76,15 @@ export class AppAbout extends LitElement {
       padding: 4px 0 8px;
     }
 
+    .device-img {
+      width: 100%;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      object-fit: cover;
+      max-height: 260px;
+      display: block;
+    }
+
     .hero-title {
       font-size: 1.375rem;
       font-weight: 700;
@@ -227,6 +236,7 @@ export class AppAbout extends LitElement {
         <div class="content">
 
           <div class="hero">
+            <img class="device-img" src="/pwa-airsampler/assets/device/DeviceV8_2.jpg" alt="AirSampler device" />
             <span class="hero-title">AirSampler</span>
             <span class="hero-sub">
               Progressive web app for controlling and monitoring the DNAir AirSampler device —

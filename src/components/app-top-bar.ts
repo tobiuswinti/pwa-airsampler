@@ -108,9 +108,18 @@ export class AppTopBar extends LitElement {
     .state-badge.closing  { color: #eab308; border-color: rgba(234,179,8,0.3);  background: rgba(234,179,8,0.08);  }
 
     .batt {
+      display: flex;
+      align-items: center;
+      gap: 4px;
       font-family: var(--sans);
       font-size: 0.75rem;
       font-weight: 500;
+    }
+
+    .batt-icon {
+      display: flex;
+      align-items: center;
+      flex-shrink: 0;
     }
 
     .btn-connect {
@@ -209,6 +218,22 @@ export class AppTopBar extends LitElement {
     return soc > 50 ? '#22c55e' : soc > 20 ? '#f59e0b' : '#ef4444';
   }
 
+  // Battery icon: outer shell + proportional fill bar
+  private _battIcon(soc: number) {
+    const color   = this._battColor(soc);
+    const fillW   = Math.round((soc / 100) * 14); // max fill width = 14px
+    return html`
+      <svg width="20" height="11" viewBox="0 0 20 11" fill="none">
+        <!-- shell -->
+        <rect x="0.5" y="0.5" width="17" height="10" rx="2" stroke="${color}" stroke-opacity="0.6"/>
+        <!-- nub -->
+        <rect x="18" y="3.5" width="2" height="4" rx="1" fill="${color}" fill-opacity="0.6"/>
+        <!-- fill -->
+        <rect x="2" y="2" width="${fillW}" height="7" rx="1" fill="${color}"/>
+      </svg>
+    `;
+  }
+
   render() {
     const u    = this._user;
     const live = this._live;
@@ -230,7 +255,10 @@ export class AppTopBar extends LitElement {
           ${connected && live ? html`
             ${this._deviceName ? html`<span class="conn-label">${this._deviceName}</span>` : ''}
             ${notIdle ? html`<span class="state-badge ${ss}">${ss.toUpperCase()}</span>` : ''}
-            <span class="batt" style="color:${this._battColor(live.soc)}">${live.soc.toFixed(0)}%</span>
+            <span class="batt" style="color:${this._battColor(live.soc)}">
+              <span class="batt-icon">${this._battIcon(live.soc)}</span>
+              ${live.soc.toFixed(0)}%
+            </span>
           ` : conn === 'connecting' ? html`
             <span class="conn-label">Connecting…</span>
           ` : html`
