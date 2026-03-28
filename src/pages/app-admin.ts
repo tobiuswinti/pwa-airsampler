@@ -18,21 +18,14 @@ export class AppAdmin extends LitElement {
   @state() private connected = bleService.connStatus === 'connected';
 
   // ── Device Name ───────────────────────────────────────────────────────
-  @state() private deviceName     = '';
+  @state() private deviceSuffix   = '';  // the part after "AirSampler-"
   @state() private nfcStatus: ActionState = 'idle';
   @state() private nfcMsg         = '';
   @state() private bleNameStatus: ActionState = 'idle';
   @state() private bleNameMsg     = '';
 
-  // ── Mechanical ────────────────────────────────────────────────────────
-  @state() private fanFlowrate    = '1.0';
-  @state() private fanResult      = idle();
-
-  @state() private servoUnit: 'mm' | 'deg' = 'mm';
-  @state() private servoValue     = '';
-  @state() private servoResult    = idle();
-
-  @state() private zeroResult     = idle();
+  // ── Servo zero ────────────────────────────────────────────────────────
+  @state() private zeroResult      = idle();
   @state() private zeroSecondsLeft = 0;
   private _zeroTimer: number | null = null;
 
@@ -88,16 +81,17 @@ export class AppAdmin extends LitElement {
 
   // ── Device Name ───────────────────────────────────────────────────────
 
+  private get _fullName() { return `AirSampler-${this.deviceSuffix}`; }
+
   private _generateName() {
     const bytes = crypto.getRandomValues(new Uint8Array(4));
-    const hex   = Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('').toUpperCase();
-    this.deviceName   = `AirSampler-${hex}`;
-    this.nfcStatus    = 'idle';
+    this.deviceSuffix  = Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('').toUpperCase();
+    this.nfcStatus     = 'idle';
     this.bleNameStatus = 'idle';
   }
 
   private async _writeNameToRfid() {
-    const name = this.deviceName.trim();
+    const name = this.deviceSuffix.trim() ? this._fullName : '';
     if (!name) return;
     if (!('NDEFReader' in window)) {
       this.nfcStatus = 'error';
@@ -118,7 +112,7 @@ export class AppAdmin extends LitElement {
   }
 
   private async _writeNameToDevice() {
-    const name = this.deviceName.trim();
+    const name = this.deviceSuffix.trim() ? this._fullName : '';
     if (!name || !this.connected) return;
     this.bleNameStatus = 'running';
     this.bleNameMsg    = '';
@@ -132,47 +126,22 @@ export class AppAdmin extends LitElement {
     }
   }
 
-  // ── Fan ───────────────────────────────────────────────────────────────
-
-  private async _setFan() {
-    if (!this.fanFlowrate.trim()) return;
-    await this._run(
-      `setFan -flowrate ${this.fanFlowrate}`,
-      r => { this.fanResult = r; },
-    );
-  }
-
-  // ── Servo ─────────────────────────────────────────────────────────────
-
-  private async _setServo() {
-    if (!this.servoValue.trim()) return;
-    const flag = this.servoUnit === 'mm' ? '-mm' : '-deg';
-    await this._run(
-      `setServo ${flag} ${this.servoValue}`,
-      r => { this.servoResult = r; },
-    );
-  }
-
   // ── Servo zero ────────────────────────────────────────────────────────
 
   private async _servoZero() {
     if (this.zeroResult.state === 'running') return;
     this.zeroResult = { state: 'running', msg: '' };
     this.zeroSecondsLeft = 16;
-
     this._zeroTimer = window.setInterval(() => {
       this.zeroSecondsLeft = Math.max(0, this.zeroSecondsLeft - 1);
     }, 1000);
-
     const lines = await bleService.sendCmd('servoZero');
-
     if (this._zeroTimer !== null) { clearInterval(this._zeroTimer); this._zeroTimer = null; }
     this.zeroSecondsLeft = 0;
-
-    if (this._isOk(lines)) {
+    if (lines.some(l => l.startsWith('OK'))) {
       this.zeroResult = { state: 'ok', msg: 'Calibration complete' };
     } else {
-      this.zeroResult = { state: 'error', msg: this._errMsg(lines) };
+      this.zeroResult = { state: 'error', msg: lines.find(l => l.startsWith('ERROR')) ?? 'Unknown error' };
     }
   }
 
@@ -365,6 +334,9 @@ export class AppAdmin extends LitElement {
       flex-wrap: wrap;
     }
 
+    .action-row .btn { margin-left: auto; }
+    .action-row .btn + .btn { margin-left: 0; }
+
     .action-row + .action-row {
       margin-top: 12px;
       padding-top: 12px;
@@ -545,13 +517,22 @@ export class AppAdmin extends LitElement {
       align-items: center;
       margin-bottom: 12px;
     }
+
+    .name-prefix {
+      font-family: var(--mono);
+      font-size: 0.8125rem;
+      color: var(--muted-fg);
+      white-space: nowrap;
+      flex-shrink: 0;
+      user-select: none;
+    }
   `;
 
   // ── Render ────────────────────────────────────────────────────────────
 
   render() {
     const dis    = !this.connected;
-    const noName = !this.deviceName.trim();
+    const noName = !this.deviceSuffix.trim();
 
     return html`
       <main>
@@ -593,13 +574,14 @@ export class AppAdmin extends LitElement {
             </ol>
 
             <div class="name-row">
+              <span class="name-prefix">AirSampler-</span>
               <input
                 class="input input-md"
                 type="text"
-                placeholder="e.g. AirSampler-A3F2B1C0"
-                .value=${this.deviceName}
+                placeholder="e.g. A3F2B1C0"
+                .value=${this.deviceSuffix}
                 @input=${(e: Event) => {
-                  this.deviceName    = (e.target as HTMLInputElement).value;
+                  this.deviceSuffix  = (e.target as HTMLInputElement).value;
                   this.nfcStatus     = 'idle';
                   this.bleNameStatus = 'idle';
                 }}
@@ -657,45 +639,6 @@ export class AppAdmin extends LitElement {
               ${this.zeroResult.state === 'running' ? html`
                 <span class="zero-progress">~${this.zeroSecondsLeft}s remaining</span>
               ` : this._badgeR(this.zeroResult)}
-            </div>
-          </div>
-
-          <!-- Mechanical -->
-          <div class="card">
-            <div class="card-title">Mechanical</div>
-
-            <div class="action-row">
-              <span class="action-label">Fan override</span>
-              <input class="input input-sm" type="number" placeholder="1.0" step="0.1" min="0"
-                .value=${this.fanFlowrate}
-                @input=${(e: Event) => { this.fanFlowrate = (e.target as HTMLInputElement).value; }}
-                ?disabled=${dis} />
-              <span class="unit">L/s</span>
-              <button class="btn" ?disabled=${dis || !this.fanFlowrate.trim()} @click=${this._setFan}>
-                Set Fan
-              </button>
-              ${this._badgeR(this.fanResult)}
-            </div>
-
-            <div class="action-row">
-              <span class="action-label">Servo position</span>
-              <div class="segment-group">
-                <button class="segment ${this.servoUnit === 'mm' ? 'active' : ''}"
-                  @click=${() => { this.servoUnit = 'mm'; this.servoValue = ''; }}>mm</button>
-                <button class="segment ${this.servoUnit === 'deg' ? 'active' : ''}"
-                  @click=${() => { this.servoUnit = 'deg'; this.servoValue = ''; }}>deg</button>
-              </div>
-              <input class="input input-sm" type="number"
-                placeholder="${this.servoUnit === 'mm' ? 'e.g. 10' : 'e.g. 90'}"
-                step="${this.servoUnit === 'mm' ? '0.1' : '1'}"
-                .value=${this.servoValue}
-                @input=${(e: Event) => { this.servoValue = (e.target as HTMLInputElement).value; }}
-                ?disabled=${dis} />
-              <span class="unit">${this.servoUnit}</span>
-              <button class="btn" ?disabled=${dis || !this.servoValue.trim()} @click=${this._setServo}>
-                Set Servo
-              </button>
-              ${this._badgeR(this.servoResult)}
             </div>
           </div>
 

@@ -1,13 +1,14 @@
 // Persists device state-log runs synced from the ESP32 via BLE.
 
 export interface RunMeta {
-  startTime: number;   // epoch ms
-  interval:  number;   // ms between rows
-  tagId:     string;
-  lat:       string;
-  lon:       string;
-  states:    string;
-  runId?:    string;   // UUID assigned by device (stable across reboots)
+  startTime:  number;   // epoch ms
+  interval:   number;   // ms between rows
+  tagId:      string;
+  lat:        string;
+  lon:        string;
+  states:     string;
+  runId?:     string;   // UUID assigned by device (stable across reboots)
+  deviceName?: string;
 }
 
 export interface DeviceRun {
@@ -125,7 +126,8 @@ export function parseMeta(metaLine: string): RunMeta {
     lon:       kv['lon']    ?? '',
     states:    kv['states'] ?? '',
   };
-  if (kv['runId']) result.runId = kv['runId'];
+  if (kv['runId'])     result.runId     = kv['runId'];
+  if (kv['deviceName']) result.deviceName = kv['deviceName'];
   return result;
 }
 

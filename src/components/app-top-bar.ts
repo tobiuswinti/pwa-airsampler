@@ -253,7 +253,7 @@ export class AppTopBar extends LitElement {
         <div class="device-status">
           <span class="conn-dot ${conn}"></span>
           ${connected && live ? html`
-            ${this._deviceName ? html`<span class="conn-label">${this._deviceName}</span>` : ''}
+            ${this._deviceName ? html`<span class="conn-label">${this._deviceName.replace(/^AirSampler-/i, '')}</span>` : ''}
             ${notIdle ? html`<span class="state-badge ${ss}">${ss.toUpperCase()}</span>` : ''}
             <span class="batt" style="color:${this._battColor(live.soc)}">
               <span class="batt-icon">${this._battIcon(live.soc)}</span>

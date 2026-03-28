@@ -314,7 +314,18 @@ export class AppHome extends LitElement {
               </div>
               <div class="nav-text">
                 <span class="nav-label">Device Setup</span>
-                <span class="nav-desc">Name, calibration, fan, servo, logs</span>
+                <span class="nav-desc">Name device, write RFID tags, manage logs</span>
+              </div>
+              <div class="nav-right"><span class="nav-arrow">›</span></div>
+            </a>
+
+            <a class="nav-card" href="${resolveRouterPath('device-control')}">
+              <div class="nav-icon" style="background:rgba(255,255,255,0.06);">
+                <svg viewBox="0 0 24 24" fill="#a1a1aa"><path d="M3 17v2h6v-2H3zM3 5v2h10V5H3zm10 16v-2h8v-2h-8v-2h-2v6h2zM7 9v2H3v2h4v2h2V9H7zm14 4v-2H11v2h10zm-6-4h2V7h4V5h-4V3h-2v6z"/></svg>
+              </div>
+              <div class="nav-text">
+                <span class="nav-label">Device Control</span>
+                <span class="nav-desc">Fan, servo position &amp; calibration</span>
               </div>
               <div class="nav-right"><span class="nav-arrow">›</span></div>
             </a>

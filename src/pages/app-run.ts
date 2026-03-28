@@ -240,12 +240,13 @@ export class AppRun extends LitElement {
           fields:         d['fields']  ?? [],
           units:          d['units']   ?? [],
           meta: {
-            startTime: Number(meta['startTime'] ?? d['startTime'] ?? 0),
-            interval:  Number(meta['interval']  ?? 1000),
-            tagId:     meta['tagId']  ?? d['tagId'] ?? '',
-            lat:       meta['lat']    ?? '',
-            lon:       meta['lon']    ?? '',
-            states:    meta['states'] ?? '',
+            startTime:  Number(meta['startTime'] ?? d['startTime'] ?? 0),
+            interval:   Number(meta['interval']  ?? 1000),
+            tagId:      meta['tagId']      ?? d['tagId'] ?? '',
+            lat:        meta['lat']        ?? '',
+            lon:        meta['lon']        ?? '',
+            states:     meta['states']     ?? '',
+            deviceName: meta['deviceName'] ?? d['deviceName'] ?? '',
           },
           rows,
           firebaseId:      docId,
@@ -1219,6 +1220,7 @@ export class AppRun extends LitElement {
               <span class="hero-name">${runName}</span>
               <div class="hero-meta">
                 ${run.meta.startTime ? html`<span>${new Date(run.meta.startTime).toLocaleString()}</span>` : ''}
+                ${run.meta.deviceName ? html`<span>${run.meta.deviceName}</span>` : ''}
                 <span>⏱ ${fmtElapsed(duration)}</span>
                 <span>${run.rows.length} datapoints · ${run.meta.interval.toFixed(0)}ms interval</span>
               </div>
