@@ -8,7 +8,9 @@ declare class NDEFReader extends EventTarget {
   scan(options?: { signal?: AbortSignal }): Promise<void>;
   onreading: ((event: NDEFReadingEvent) => void) | null;
 }
-declare interface NDEFReadingEvent extends Event { serialNumber: string; }
+declare interface NDEFRecord { recordType: string; encoding?: string; data: DataView; }
+declare interface NDEFMessage { records: NDEFRecord[]; }
+declare interface NDEFReadingEvent extends Event { serialNumber: string; message: NDEFMessage; }
 
 interface CloudDoc {
   firebaseDocId: string;
@@ -101,7 +103,15 @@ export class AppSample extends LitElement {
         this._nfcAbort?.abort();
         this._nfcAbort = null;
         this.scanning  = false;
-        this._search(e.serialNumber.toUpperCase());
+        let id = '';
+        for (const record of e.message.records) {
+          if (record.recordType === 'text') {
+            id = new TextDecoder(record.encoding ?? 'utf-8').decode(record.data);
+            break;
+          }
+        }
+        if (!id && e.serialNumber) id = e.serialNumber;
+        this._search(id.toUpperCase());
       };
       await reader.scan({ signal: this._nfcAbort.signal });
     } catch (err: any) {

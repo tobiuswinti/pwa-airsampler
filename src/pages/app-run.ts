@@ -642,17 +642,6 @@ export class AppRun extends LitElement {
       }
     }
 
-    // State label inside each segment
-    ctx.font = 'bold 8px sans-serif'; ctx.textAlign = 'center';
-    for (let i = 0; i < pts.length; i++) {
-      const x0 = tsToX(pts[i].ts);
-      const x1 = i < pts.length - 1 ? tsToX(pts[i + 1].ts) : PL + cW;
-      const segW = x1 - x0;
-      if (segW < 28) continue;
-      const color = resolveStateColor(pts[i].state, uniqueStates);
-      ctx.fillStyle = color;
-      ctx.fillText(pts[i].state, x0 + segW / 2, PT + cH / 2 + 4);
-    }
 
     // Time axis
     const tickMs = pickTickMs(dur);

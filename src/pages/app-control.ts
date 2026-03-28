@@ -115,7 +115,7 @@ export class AppControl extends LitElement {
           }
         }
         if (!id && serialNumber) id = serialNumber;
-        if (id) this.tagId = id;
+        if (id) this.tagId = id.toUpperCase();
         this._stopNfc();
       });
       reader.addEventListener('readingerror', () => {
