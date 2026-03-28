@@ -2,6 +2,7 @@ import { LitElement, css, html } from 'lit';
 import { state, customElement } from 'lit/decorators.js';
 import { collection, query, where, getDocs, deleteDoc, doc, Timestamp, orderBy } from 'firebase/firestore';
 import { db } from '../firebase';
+import { getDeviceRuns } from '../device-log-store';
 
 // Minimal Web NFC type stubs
 declare class NDEFReader extends EventTarget {
@@ -44,6 +45,7 @@ export class AppSample extends LitElement {
   connectedCallback() {
     super.connectedCallback();
     this._loadAll();
+    if (this.nfcAvail) this._startScan();
   }
 
   disconnectedCallback() {
@@ -143,13 +145,20 @@ export class AppSample extends LitElement {
   }
 
   private async _search(raw: string) {
-    this.tagId      = raw;
-    this.searching  = true;
-    this.searched   = false;
+    this.tagId        = raw;
+    this.searching    = true;
+    this.searched     = false;
     this.cloudResults = [];
 
+    const tag = raw.trim();
+
+    // Local runs matching this tag
+    const localMatches = getDeviceRuns().filter(
+      r => (r.meta?.tagId ?? '').toUpperCase() === tag.toUpperCase()
+    );
+
     try {
-      const q    = query(collection(db, COLLECTION), where('tagId', '==', raw.trim()));
+      const q    = query(collection(db, COLLECTION), where('tagId', '==', tag));
       const snap = await getDocs(q);
       this.cloudResults = snap.docs.map(d => this._docToCloudDoc(d.id, d.data()));
     } catch (err) {
@@ -158,6 +167,19 @@ export class AppSample extends LitElement {
 
     this.searching = false;
     this.searched  = true;
+
+    // Auto-navigate when there's exactly one match total (cloud preferred)
+    const cloudCount = this.cloudResults.length;
+    const localCount = localMatches.length;
+    if (cloudCount === 1 && localCount === 0) {
+      window.location.hash = `#cloud-run/${this.cloudResults[0].firebaseDocId}`;
+    } else if (cloudCount === 0 && localCount === 1) {
+      window.location.hash = `#run/${localMatches[0].id}`;
+    } else if (cloudCount >= 1 && localCount >= 1) {
+      // Cloud preferred — pick the most recent cloud result
+      const best = this.cloudResults.reduce((a, b) => a.startTime > b.startTime ? a : b);
+      window.location.hash = `#cloud-run/${best.firebaseDocId}`;
+    }
   }
 
   private _fmt(ms: number): string {

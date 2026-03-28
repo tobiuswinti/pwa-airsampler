@@ -685,7 +685,6 @@ export class AppRun extends LitElement {
       const elStr = fmtTick(seg.ts - tStart);
 
       // Vertical cursor line
-      const hx = tsToX(seg.ts + (segIdx < pts.length - 1 ? (pts[segIdx + 1].ts - seg.ts) / 2 : 0));
       const cursorX = Math.max(1, Math.min(cW - 1, hoverX));
       ctx.strokeStyle = 'rgba(255,255,255,0.15)';
       ctx.lineWidth   = 1;
