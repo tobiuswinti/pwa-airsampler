@@ -38,13 +38,6 @@ const CHART_GROUPS: ChartGroup[] = [
         convert: (v: number) => v / 100_000 },
     ],
   },
-  {
-    id: 'battery', title: 'Battery',
-    series: [
-      { field: 'soc',     label: 'SoC',     color: '#22c55e', unit: '%', domainMin: 0, domainMax: 100 },
-      { field: 'voltage', label: 'Voltage', color: '#a78bfa', unit: 'V' },
-    ],
-  },
 ];
 
 const STATE_COLOR: Record<string, string> = {
@@ -110,6 +103,15 @@ function lastVal(run: DeviceRun, field: string): number | null {
   const idx = run.fields.indexOf(field);
   if (idx < 0) return null;
   for (let i = run.rows.length - 1; i >= 0; i--) {
+    const v = Number(run.rows[i][idx]); if (isFinite(v)) return v;
+  }
+  return null;
+}
+
+function firstVal(run: DeviceRun, field: string): number | null {
+  const idx = run.fields.indexOf(field);
+  if (idx < 0) return null;
+  for (let i = 0; i < run.rows.length; i++) {
     const v = Number(run.rows[i][idx]); if (isFinite(v)) return v;
   }
   return null;
@@ -802,14 +804,59 @@ export class AppRun extends LitElement {
     .hero-meta span { display: flex; align-items: center; gap: 4px; }
 
     /* ── Key stats ── */
-    .key-stat-wide {
+    /* ── Flow + Battery row ── */
+    .flow-batt-row {
+      display: flex;
+      gap: 8px;
+    }
+
+    .flow-batt-cell {
       background: var(--card);
       border: 1px solid var(--border);
       border-radius: 8px;
       padding: 12px 14px;
       display: flex;
       flex-direction: column;
-      gap: 3px;
+      gap: 6px;
+    }
+
+    .flow-batt-cell--flow { flex-shrink: 0; }
+    .flow-batt-cell--batt { flex: 1; min-width: 0; }
+
+    .batt-stats {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px 18px;
+      align-items: flex-end;
+    }
+
+    .batt-item {
+      display: flex;
+      flex-direction: column;
+      gap: 1px;
+    }
+
+    .batt-sub {
+      font-size: 0.6rem;
+      font-weight: 500;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      color: #52525b;
+    }
+
+    .batt-val {
+      font-family: var(--mono);
+      font-size: 1rem;
+      font-weight: 700;
+      color: var(--fg);
+      letter-spacing: -0.01em;
+    }
+
+    .batt-unit {
+      font-size: 0.68rem;
+      font-weight: 400;
+      color: var(--muted-fg);
+      margin-left: 1px;
     }
 
     .key-stats {
@@ -1062,7 +1109,13 @@ export class AppRun extends LitElement {
 
     // Key stats
     const pressureConvert = (v: number) => v / 100_000;
-    const flowSpMax  = maxVal(run, 'flowrateSP');
+    const flowSpMax   = maxVal(run, 'flowrateSP');
+    const socStart    = firstVal(run, 'soc');
+    const socEnd      = lastVal(run,  'soc');
+    const socDelta    = (socStart !== null && socEnd !== null) ? socEnd - socStart : null;
+    const vStart      = firstVal(run, 'voltage');
+    const vEnd        = lastVal(run,  'voltage');
+    const hasBattery  = socStart !== null || vStart !== null;
     const tempAvg    = avgVal(run, 'temperature');
     const tempMin    = minVal(run, 'temperature');
     const tempMax    = maxVal(run, 'temperature');
@@ -1116,7 +1169,7 @@ export class AppRun extends LitElement {
               <div class="hero-meta">
                 ${run.meta.startTime ? html`<span>${new Date(run.meta.startTime).toLocaleString()}</span>` : ''}
                 <span>⏱ ${fmtElapsed(duration)}</span>
-                <span>${run.rows.length} datapoints · ${(run.meta.interval * 1000).toFixed(0)}ms interval</span>
+                <span>${run.rows.length} datapoints · ${run.meta.interval.toFixed(0)}ms interval</span>
               </div>
             </div>
             <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">
@@ -1129,14 +1182,48 @@ export class AppRun extends LitElement {
             </div>
           </div>
 
-          <!-- Key stats: flow setpoint (wide) -->
-          ${flowSpMax !== null ? html`
-            <div class="key-stat-wide">
-              <span class="key-stat-label">Flow Setpoint</span>
-              <div class="key-stat-inline">
-                <span class="key-stat-value" style="color:#f59e0b">${flowSpMax.toFixed(3)}</span>
-                <span class="key-stat-unit">L/s</span>
-              </div>
+          <!-- Flow + Battery row -->
+          ${(flowSpMax !== null || hasBattery) ? html`
+            <div class="flow-batt-row">
+              ${flowSpMax !== null ? html`
+                <div class="flow-batt-cell flow-batt-cell--flow">
+                  <span class="key-stat-label">Flow Setpoint</span>
+                  <div class="key-stat-inline">
+                    <span class="key-stat-value" style="color:#f59e0b">${flowSpMax.toFixed(3)}</span>
+                    <span class="key-stat-unit">L/s</span>
+                  </div>
+                </div>` : ''}
+              ${hasBattery ? html`
+                <div class="flow-batt-cell flow-batt-cell--batt">
+                  <span class="key-stat-label">Battery</span>
+                  <div class="batt-stats">
+                    ${socStart !== null ? html`
+                      <span class="batt-item">
+                        <span class="batt-sub">SoC start</span>
+                        <span class="batt-val" style="color:#22c55e">${socStart.toFixed(0)}<span class="batt-unit">%</span></span>
+                      </span>` : ''}
+                    ${socEnd !== null ? html`
+                      <span class="batt-item">
+                        <span class="batt-sub">end</span>
+                        <span class="batt-val" style="color:${(socEnd ?? 100) < 20 ? '#ef4444' : (socEnd ?? 100) < 50 ? '#f59e0b' : '#22c55e'}">${socEnd.toFixed(0)}<span class="batt-unit">%</span></span>
+                      </span>` : ''}
+                    ${socDelta !== null ? html`
+                      <span class="batt-item">
+                        <span class="batt-sub">used</span>
+                        <span class="batt-val" style="color:#a78bfa">${Math.abs(socDelta).toFixed(1)}<span class="batt-unit">%</span></span>
+                      </span>` : ''}
+                    ${vStart !== null ? html`
+                      <span class="batt-item">
+                        <span class="batt-sub">V start</span>
+                        <span class="batt-val">${vStart.toFixed(2)}<span class="batt-unit">V</span></span>
+                      </span>` : ''}
+                    ${vEnd !== null ? html`
+                      <span class="batt-item">
+                        <span class="batt-sub">end</span>
+                        <span class="batt-val">${vEnd.toFixed(2)}<span class="batt-unit">V</span></span>
+                      </span>` : ''}
+                  </div>
+                </div>` : ''}
             </div>` : ''}
 
           <!-- Key stats: env 3-column -->
@@ -1224,44 +1311,21 @@ export class AppRun extends LitElement {
           <!-- Location map -->
           ${hasLocation ? html`
             <div class="card">
-              <div class="card-header"><span class="card-title">Location</span></div>
+              <div class="card-header">
+                <span class="card-title">Location</span>
+                <div style="display:flex;gap:6px;">
+                  <a class="btn-sm"
+                     href="https://www.openstreetmap.org/?mlat=${lat}&mlon=${lon}#map=15/${lat}/${lon}"
+                     target="_blank" rel="noopener">OSM ↗</a>
+                  <a class="btn-sm"
+                     href="https://www.google.com/maps?q=${lat},${lon}"
+                     target="_blank" rel="noopener">Google Maps ↗</a>
+                </div>
+              </div>
               <iframe class="map-frame"
                 src="https://www.openstreetmap.org/export/embed.html?bbox=${lon! - 0.005},${lat! - 0.005},${lon! + 0.005},${lat! + 0.005}&layer=mapnik&marker=${lat},${lon}"
                 loading="lazy"></iframe>
             </div>` : ''}
-
-          <!-- Details -->
-          <div class="card">
-            <div class="card-header"><span class="card-title">Details</span></div>
-            ${run.meta.startTime ? html`
-              <div class="info-row">
-                <span class="info-label">Start time</span>
-                <span class="info-value">${new Date(run.meta.startTime).toLocaleString()}</span>
-              </div>` : ''}
-            <div class="info-row">
-              <span class="info-label">Duration</span>
-              <span class="info-value">${fmtElapsed(duration)}</span>
-            </div>
-            <div class="info-row">
-              <span class="info-label">Datapoints</span>
-              <span class="info-value">${run.rows.length} × ${(run.meta.interval * 1000).toFixed(0)}ms</span>
-            </div>
-            ${run.meta.tagId ? html`
-              <div class="info-row">
-                <span class="info-label">Sample ID</span>
-                <span class="info-value">${run.meta.tagId}</span>
-              </div>` : ''}
-            ${run.cloudUploadedAt ? html`
-              <div class="info-row">
-                <span class="info-label">Uploaded</span>
-                <span class="info-value">${new Date(run.cloudUploadedAt).toLocaleString()}</span>
-              </div>` : ''}
-            ${!this.isCloud ? html`
-              <div class="info-row">
-                <span class="info-label">Downloaded</span>
-                <span class="info-value">${new Date(run.downloadedAt).toLocaleString()}</span>
-              </div>` : ''}
-          </div>
 
         </div>
       </main>

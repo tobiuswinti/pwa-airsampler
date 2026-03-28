@@ -16,7 +16,7 @@ export class AppControl extends LitElement {
   @state() private lon       = '';
   @state() private flowrateSP   = '1.0';
   @state() private durationH    = '1';
-  @state() private delayH       = '';
+  @state() private delayH       = '0';
   @state() private maxHumidity  = '100';
   @state() private minSoC       = '2';
 
@@ -78,7 +78,7 @@ export class AppControl extends LitElement {
     let cmd = 'startSampling';
     if (this.flowrateSP)  cmd += ` -flowrate ${this.flowrateSP}`;
     if (this.durationH)   cmd += ` -durationS ${Math.round(parseFloat(this.durationH) * 3600)}`;
-    if (this.delayH)      cmd += ` -delayS ${Math.round(parseFloat(this.delayH) * 3600)}`;
+    if (this.delayH && this.delayH !== '0') cmd += ` -delayS ${Math.round(parseFloat(this.delayH) * 3600)}`;
     if (this.maxHumidity) cmd += ` -maxHumidity ${this.maxHumidity}`;
     if (this.minSoC)      cmd += ` -minSoC ${this.minSoC}`;
     const sampLines = await bleService.sendCmd(cmd);
@@ -154,9 +154,19 @@ export class AppControl extends LitElement {
     );
   }
 
-  private _stepDot(s: StepStatus) {
-    const cls = s === 'ok' ? 'ok' : s === 'error' ? 'err' : s === 'running' ? 'spin' : 'idle';
-    return html`<span class="step-dot ${cls}"></span>`;
+  /* ── Step state helpers ── */
+  private _stepAccent(s: StepStatus): string {
+    if (s === 'ok')      return '#22c55e';
+    if (s === 'error')   return '#ef4444';
+    if (s === 'running') return '#f59e0b';
+    return 'transparent';
+  }
+
+  private _stepIcon(s: StepStatus) {
+    if (s === 'ok')    return html`<svg width="14" height="14" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="7" stroke="#22c55e" stroke-width="1.5"/><path d="M5 8l2 2 4-4" stroke="#22c55e" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+    if (s === 'error') return html`<svg width="14" height="14" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="7" stroke="#ef4444" stroke-width="1.5"/><path d="M6 6l4 4M10 6l-4 4" stroke="#ef4444" stroke-width="1.5" stroke-linecap="round"/></svg>`;
+    if (s === 'running') return html`<span class="spin-dot"></span>`;
+    return null;
   }
 
   /* ── Styles ── */
@@ -164,9 +174,9 @@ export class AppControl extends LitElement {
     :host {
       --bg:       #09090b;
       --card:     #111113;
-      --border:   #58585f;
+      --border:   #3f3f46;
       --fg:       #fafafa;
-      --muted-fg: #c4c4cc;
+      --muted-fg: #a1a1aa;
       --sans: 'Geist', 'Inter', system-ui, sans-serif;
       --mono: 'Share Tech Mono', monospace;
     }
@@ -197,7 +207,7 @@ export class AppControl extends LitElement {
       display: flex; align-items: center; justify-content: center;
       width: 32px; height: 32px;
       border: 1px solid var(--border);
-      border-radius: 6px;
+      border-radius: 8px;
       background: transparent;
       color: var(--muted-fg);
       cursor: pointer;
@@ -209,9 +219,10 @@ export class AppControl extends LitElement {
     .back-btn:hover { color: var(--fg); border-color: #52525b; }
 
     .page-title {
-      font-size: 0.875rem;
+      font-size: 0.9375rem;
       font-weight: 600;
       color: var(--fg);
+      letter-spacing: -0.01em;
     }
 
     .content {
@@ -220,112 +231,81 @@ export class AppControl extends LitElement {
       padding: 20px;
       display: flex;
       flex-direction: column;
-      gap: 12px;
+      gap: 10px;
     }
 
-    .alert {
+    /* ── Step card ── */
+    .step-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      overflow: hidden;
+      transition: border-color 0.2s;
+    }
+
+    .step-card.status-ok      { border-color: rgba(34,197,94,0.35); }
+    .step-card.status-error   { border-color: rgba(239,68,68,0.35); }
+    .step-card.status-running { border-color: rgba(245,158,11,0.35); }
+
+    .step-header {
       display: flex;
       align-items: center;
       gap: 10px;
-      padding: 11px 14px;
-      border: 1px solid #3f1f1a;
-      border-radius: 8px;
-      background: rgba(239,68,68,0.06);
-      font-size: 0.8125rem;
-      color: #fca5a5;
+      padding: 14px 16px 12px;
     }
 
-    .alert a {
-      margin-left: auto;
-      font-size: 0.75rem;
-      font-family: var(--mono);
-      color: var(--fg);
-      border: 1px solid var(--border);
-      padding: 3px 10px;
-      border-radius: 5px;
-      text-decoration: none;
-      white-space: nowrap;
-    }
-
-    /* ── Card ── */
-    .card {
-      background: var(--card);
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      padding: 16px 18px;
-    }
-
-    .card-title {
-      font-size: 0.75rem;
-      font-weight: 500;
-      letter-spacing: 0.05em;
-      text-transform: uppercase;
-      color: var(--muted-fg);
-      margin-bottom: 16px;
-    }
-
-    /* ── Sections inside card ── */
-    .section {
-      padding-top: 16px;
-      border-top: 1px solid var(--border);
-      margin-top: 16px;
-    }
-
-    .section:first-of-type { border-top: none; padding-top: 0; margin-top: 0; }
-
-    .section-header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      margin-bottom: 10px;
-    }
-
-    .section-label {
-      font-size: 0.6875rem;
-      font-weight: 500;
+    .step-num {
+      font-size: 0.625rem;
+      font-weight: 700;
       letter-spacing: 0.06em;
-      text-transform: uppercase;
-      color: var(--muted-fg);
-    }
-
-    .section-right {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-
-    /* ── Step status dot ── */
-    .step-dot {
-      width: 6px; height: 6px;
-      border-radius: 50%;
+      color: #52525b;
+      background: #1c1c1f;
+      border: 1px solid #2e2e33;
+      border-radius: 5px;
+      padding: 2px 6px;
       flex-shrink: 0;
     }
 
-    .step-dot.idle { background: #3f3f46; }
-    .step-dot.ok   { background: #22c55e; box-shadow: 0 0 4px #22c55e88; }
-    .step-dot.err  { background: #ef4444; }
-    .step-dot.spin { background: #a1a1aa; animation: blink 0.7s infinite; }
-
-    @keyframes blink { 50% { opacity: 0.2; } }
-
-    /* ── Fields ── */
-    .field-row {
-      display: flex;
-      gap: 8px;
-      align-items: center;
+    .step-title {
+      font-size: 0.875rem;
+      font-weight: 600;
+      color: var(--fg);
+      letter-spacing: -0.01em;
+      flex: 1;
     }
 
-    .field-row + .field-row { margin-top: 6px; }
+    .step-status {
+      display: flex;
+      align-items: center;
+      flex-shrink: 0;
+    }
 
+    .spin-dot {
+      display: inline-block;
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: #f59e0b;
+      animation: pulse 0.7s infinite;
+    }
+
+    @keyframes pulse { 50% { opacity: 0.2; } }
+
+    .step-body {
+      padding: 0 16px 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    /* ── Input ── */
     .input {
-      flex: 1;
-      min-width: 60px;
+      width: 100%;
       font-family: var(--mono);
-      font-size: 0.8125rem;
-      padding: 8px 10px;
+      font-size: 0.875rem;
+      padding: 10px 12px;
       border: 1px solid var(--border);
-      border-radius: 6px;
-      background: #18181b;
+      border-radius: 8px;
+      background: #0d0d0f;
       color: var(--fg);
       outline: none;
       transition: border-color 0.15s;
@@ -333,97 +313,245 @@ export class AppControl extends LitElement {
 
     .input::placeholder { color: #3f3f46; }
     .input:focus { border-color: #52525b; }
-    .input:disabled { opacity: 0.35; }
+    .input:disabled { opacity: 0.3; }
 
-    .unit {
-      font-family: var(--mono);
-      font-size: 0.72rem;
-      color: var(--muted-fg);
-      flex-shrink: 0;
-    }
-
-    /* ── Param groups ── */
-    .param-label {
-      font-size: 0.72rem;
-      font-weight: 500;
-      letter-spacing: 0.04em;
-      text-transform: uppercase;
-      color: var(--muted-fg);
-      margin-bottom: 6px;
-    }
-
-    .param-group + .param-group { margin-top: 14px; }
-
-    /* ── Presets ── */
-    .preset-row {
+    .input-row {
       display: flex;
-      gap: 5px;
-      flex-wrap: wrap;
-      margin-bottom: 6px;
+      gap: 8px;
     }
 
-    .preset {
-      font-family: var(--mono);
-      font-size: 0.68rem;
-      padding: 4px 11px;
+    .input-row .input { flex: 1; min-width: 0; }
+
+    /* ── NFC button ── */
+    .nfc-btn {
+      font-family: var(--sans);
+      font-size: 0.8125rem;
+      font-weight: 500;
+      padding: 10px 14px;
       border: 1px solid var(--border);
-      border-radius: 5px;
+      border-radius: 8px;
       background: transparent;
       color: var(--muted-fg);
       cursor: pointer;
-      transition: all 0.12s;
-    }
-
-    .preset:hover:not(:disabled) { border-color: #52525b; color: var(--fg); }
-    .preset.active { border-color: var(--fg); color: var(--fg); background: #27272a; }
-    .preset:disabled { opacity: 0.3; cursor: not-allowed; }
-
-    /* ── Ghost btn ── */
-    .btn-ghost {
-      font-family: var(--mono);
-      font-size: 0.72rem;
-      padding: 5px 12px;
-      border: 1px solid var(--border);
-      border-radius: 5px;
-      background: transparent;
-      color: var(--muted-fg);
-      cursor: pointer;
-      transition: all 0.12s;
       white-space: nowrap;
       flex-shrink: 0;
-    }
-
-    .btn-ghost:hover:not(:disabled) { border-color: #52525b; color: var(--fg); }
-    .btn-ghost:disabled { opacity: 0.3; cursor: not-allowed; }
-
-    .btn-ghost.scanning { color: #f59e0b; border-color: #f59e0b40; }
-
-    /* ── NFC indicator ── */
-    .nfc-status {
       display: flex;
       align-items: center;
       gap: 6px;
-      font-family: var(--mono);
-      font-size: 0.68rem;
-      color: #a1a1aa;
-      margin-top: 6px;
+      transition: border-color 0.15s, color 0.15s;
     }
 
-    .nfc-dot {
-      width: 6px; height: 6px;
+    .nfc-btn:hover:not(:disabled) { border-color: #52525b; color: var(--fg); }
+    .nfc-btn:disabled { opacity: 0.3; cursor: not-allowed; }
+    .nfc-btn.scanning { color: #f59e0b; border-color: rgba(245,158,11,0.4); background: rgba(245,158,11,0.05); }
+
+    .nfc-hint {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 0.75rem;
+      color: #f59e0b;
+    }
+
+    .nfc-hint-dot {
+      width: 5px; height: 5px;
       border-radius: 50%;
       background: #f59e0b;
-      animation: blink 0.5s infinite;
+      animation: pulse 0.5s infinite;
     }
 
     .err-text {
       font-family: var(--mono);
-      font-size: 0.68rem;
+      font-size: 0.72rem;
       color: #f87171;
-      margin-top: 6px;
     }
 
-    /* ── Tooltip ── */
+    /* ── GPS button ── */
+    .gps-btn {
+      font-family: var(--sans);
+      font-size: 0.8125rem;
+      font-weight: 500;
+      padding: 10px 14px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: transparent;
+      color: var(--muted-fg);
+      cursor: pointer;
+      white-space: nowrap;
+      flex-shrink: 0;
+      transition: border-color 0.15s, color 0.15s;
+    }
+
+    .gps-btn:hover:not(:disabled) { border-color: #52525b; color: var(--fg); }
+    .gps-btn:disabled { opacity: 0.3; cursor: not-allowed; }
+
+    /* ── Param grid ── */
+    .param-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+
+    .param-grid.cols-3 {
+      grid-template-columns: 1fr 1fr 1fr;
+    }
+
+    .param-item {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .param-label {
+      font-size: 0.6875rem;
+      font-weight: 500;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      color: var(--muted-fg);
+    }
+
+    /* ── Presets ── */
+    .presets {
+      display: flex;
+      gap: 4px;
+      flex-wrap: wrap;
+    }
+
+    .preset {
+      font-family: var(--mono);
+      font-size: 0.6875rem;
+      padding: 3px 9px;
+      border: 1px solid #2e2e33;
+      border-radius: 20px;
+      background: transparent;
+      color: #71717a;
+      cursor: pointer;
+      transition: all 0.12s;
+      white-space: nowrap;
+    }
+
+    .preset:hover:not(:disabled) { border-color: #52525b; color: var(--muted-fg); }
+    .preset.active { border-color: #52525b; color: var(--fg); background: #1c1c1f; }
+    .preset:disabled { opacity: 0.25; cursor: not-allowed; }
+
+    /* ── Param input with unit ── */
+    .param-input-wrap {
+      position: relative;
+    }
+
+    .param-input-wrap .input {
+      padding-right: 32px;
+    }
+
+    .param-unit {
+      position: absolute;
+      right: 10px;
+      top: 50%;
+      transform: translateY(-50%);
+      font-family: var(--mono);
+      font-size: 0.72rem;
+      color: #52525b;
+      pointer-events: none;
+    }
+
+    /* ── Divider ── */
+    .divider {
+      height: 1px;
+      background: var(--border);
+      margin: 2px 0;
+    }
+
+    /* ── Error banner ── */
+    .error-banner {
+      border: 1px solid rgba(239,68,68,0.3);
+      border-radius: 8px;
+      padding: 10px 14px;
+      background: rgba(239,68,68,0.06);
+      font-family: var(--mono);
+      font-size: 0.72rem;
+      color: #fca5a5;
+      word-break: break-all;
+    }
+
+    /* ── Connect banner ── */
+    .connect-banner {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      padding: 14px 16px;
+      border: 1px solid rgba(59,130,246,0.3);
+      border-radius: 12px;
+      background: rgba(59,130,246,0.06);
+      color: #93c5fd;
+      font-family: var(--sans);
+      text-decoration: none;
+      transition: border-color 0.15s, background 0.15s;
+    }
+
+    .connect-banner:hover {
+      border-color: rgba(59,130,246,0.5);
+      background: rgba(59,130,246,0.1);
+    }
+
+    .connect-banner .cb-icon {
+      width: 40px; height: 40px;
+      border-radius: 10px;
+      background: rgba(59,130,246,0.1);
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0;
+    }
+
+    .connect-banner .cb-label {
+      flex: 1;
+      font-size: 0.9375rem;
+      font-weight: 600;
+      letter-spacing: -0.01em;
+    }
+
+    .connect-banner .cb-arrow {
+      color: rgba(147,197,253,0.5);
+      font-size: 1.1rem;
+    }
+
+    /* ── Start button ── */
+    .btn-start {
+      width: 100%;
+      padding: 15px;
+      font-family: var(--sans);
+      font-size: 0.9375rem;
+      font-weight: 600;
+      letter-spacing: -0.01em;
+      border: none;
+      border-radius: 12px;
+      cursor: pointer;
+      background: var(--fg);
+      color: #09090b;
+      transition: opacity 0.15s, transform 0.1s;
+      margin-top: 4px;
+    }
+
+    .btn-start:hover:not(:disabled) { opacity: 0.9; transform: translateY(-1px); }
+    .btn-start:active:not(:disabled) { transform: translateY(0); }
+    .btn-start:disabled { opacity: 0.25; cursor: not-allowed; transform: none; }
+
+    .btn-stop {
+      width: 100%;
+      padding: 14px;
+      font-family: var(--sans);
+      font-size: 0.9375rem;
+      font-weight: 600;
+      border: 1px solid rgba(239,68,68,0.3);
+      border-radius: 12px;
+      cursor: pointer;
+      background: rgba(239,68,68,0.06);
+      color: #fca5a5;
+      transition: background 0.15s;
+      margin-top: 4px;
+    }
+
+    .btn-stop:hover { background: rgba(239,68,68,0.12); }
+
+    /* ── NFC tooltip ── */
     .tooltip-wrap { position: relative; display: inline-block; }
     .tooltip-wrap:hover .tooltip { opacity: 1; }
     .tooltip {
@@ -435,8 +563,7 @@ export class AppControl extends LitElement {
       border: 1px solid var(--border);
       border-radius: 5px;
       padding: 4px 8px;
-      font-family: var(--mono);
-      font-size: 0.6rem;
+      font-size: 0.65rem;
       color: var(--muted-fg);
       white-space: nowrap;
       opacity: 0;
@@ -444,59 +571,14 @@ export class AppControl extends LitElement {
       pointer-events: none;
       z-index: 10;
     }
-
-    /* ── Error banner ── */
-    .error-banner {
-      border: 1px solid #7f1d1d;
-      border-radius: 6px;
-      padding: 9px 12px;
-      background: rgba(239,68,68,0.06);
-      font-family: var(--mono);
-      font-size: 0.72rem;
-      color: #fca5a5;
-      word-break: break-all;
-      margin-top: 12px;
-    }
-
-    /* ── Action buttons ── */
-    .btn-start {
-      width: 100%;
-      padding: 13px;
-      font-family: var(--sans);
-      font-size: 0.875rem;
-      font-weight: 500;
-      letter-spacing: -0.01em;
-      border: none;
-      border-radius: 6px;
-      cursor: pointer;
-      background: var(--fg);
-      color: #09090b;
-      transition: opacity 0.15s;
-    }
-
-    .btn-start:hover:not(:disabled) { opacity: 0.88; }
-    .btn-start:disabled { opacity: 0.3; cursor: not-allowed; }
-
-    .btn-stop {
-      width: 100%;
-      padding: 12px;
-      font-family: var(--sans);
-      font-size: 0.875rem;
-      font-weight: 500;
-      border: 1px solid #7f1d1d;
-      border-radius: 6px;
-      cursor: pointer;
-      background: rgba(239,68,68,0.06);
-      color: #fca5a5;
-      transition: background 0.15s;
-    }
-
-    .btn-stop:hover { background: rgba(239,68,68,0.12); }
   `;
 
   render() {
     const isRunning = this.stepSampling === 'ok';
     const canStart  = this.connected && !!this.tagId.trim() && !!this.lat.trim() && !!this.lon.trim() && !this.flowRunning;
+
+    const cardClass = (s: StepStatus) =>
+      `step-card ${ s === 'ok' ? 'status-ok' : s === 'error' ? 'status-error' : s === 'running' ? 'status-running' : '' }`;
 
     return html`
       <main>
@@ -508,56 +590,58 @@ export class AppControl extends LitElement {
         <div class="content">
 
           ${!this.connected ? html`
-            <div class="alert">
-              <span>Device not connected</span>
-              <a href="${resolveRouterPath('connect')}">Connect →</a>
-            </div>
+            <a class="connect-banner" href="${resolveRouterPath('connect')}">
+              <div class="cb-icon">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="#93c5fd">
+                  <path d="M1 9l2 2c4.97-4.97 13.03-4.97 18 0l2-2C16.93 2.93 7.08 2.93 1 9zm8 8l3 3 3-3a4.237 4.237 0 00-6 0zm-4-4l2 2a7.074 7.074 0 0110 0l2-2C15.14 9.14 8.87 9.14 5 13z"/>
+                </svg>
+              </div>
+              <span class="cb-label">Connect to device to start sampling</span>
+              <span class="cb-arrow">›</span>
+            </a>
           ` : ''}
 
-          <!-- Mission Setup -->
-          <div class="card">
-            <div class="card-title">Mission Setup</div>
-
-            <!-- Tag ID -->
-            <div class="section">
-              <div class="section-header">
-                <span class="section-label">Tag ID</span>
-                <div class="section-right">
-                  ${this._stepDot(this.stepTag)}
-                  <span class="${!this.nfcAvailable ? 'tooltip-wrap' : ''}">
-                    <button class="btn-ghost ${this.nfcScanning ? 'scanning' : ''}"
-                      ?disabled=${!this.connected}
-                      @click=${this.nfcScanning ? this._stopNfc : this._scanNfc}>
-                      ${this.nfcScanning ? 'Cancel' : 'Scan NFC'}
-                    </button>
-                    ${!this.nfcAvailable ? html`<span class="tooltip">Requires Chrome on Android</span>` : ''}
-                  </span>
-                </div>
+          <!-- ① Tag ID -->
+          <div class="${cardClass(this.stepTag)}">
+            <div class="step-header">
+              <span class="step-num">01</span>
+              <span class="step-title">Sample Tag</span>
+              <span class="step-status">${this._stepIcon(this.stepTag)}</span>
+            </div>
+            <div class="step-body">
+              <div class="input-row">
+                <input class="input" type="text" placeholder="e.g. sample-A1"
+                  .value=${this.tagId}
+                  @input=${(e: Event) => { this.tagId = (e.target as HTMLInputElement).value; }}
+                  ?disabled=${!this.connected} />
+                <span class="${!this.nfcAvailable ? 'tooltip-wrap' : ''}">
+                  <button class="nfc-btn ${this.nfcScanning ? 'scanning' : ''}"
+                    ?disabled=${!this.connected || !this.nfcAvailable}
+                    @click=${this.nfcScanning ? this._stopNfc : this._scanNfc}>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                      <path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z"/>
+                    </svg>
+                    ${this.nfcScanning ? 'Cancel' : 'NFC'}
+                  </button>
+                  ${!this.nfcAvailable ? html`<span class="tooltip">Requires Chrome on Android</span>` : ''}
+                </span>
               </div>
-              <input class="input" type="text" placeholder="e.g. sample1"
-                .value=${this.tagId}
-                @input=${(e: Event) => { this.tagId = (e.target as HTMLInputElement).value; }}
-                ?disabled=${!this.connected} />
               ${this.nfcScanning ? html`
-                <div class="nfc-status"><span class="nfc-dot"></span>Hold tag near phone…</div>
+                <div class="nfc-hint"><span class="nfc-hint-dot"></span>Hold tag near phone…</div>
               ` : ''}
               ${this.nfcError ? html`<div class="err-text">${this.nfcError}</div>` : ''}
             </div>
+          </div>
 
-            <!-- Location -->
-            <div class="section">
-              <div class="section-header">
-                <span class="section-label">Location</span>
-                <div class="section-right">
-                  ${this._stepDot(this.stepLocation)}
-                  <button class="btn-ghost"
-                    ?disabled=${!this.connected || this.gpsLoading}
-                    @click=${this._getGps}>
-                    ${this.gpsLoading ? 'Getting…' : 'GPS'}
-                  </button>
-                </div>
-              </div>
-              <div class="field-row">
+          <!-- ② Location -->
+          <div class="${cardClass(this.stepLocation)}">
+            <div class="step-header">
+              <span class="step-num">02</span>
+              <span class="step-title">Location</span>
+              <span class="step-status">${this._stepIcon(this.stepLocation)}</span>
+            </div>
+            <div class="step-body">
+              <div class="input-row">
                 <input class="input" type="number" placeholder="Latitude" step="0.000001"
                   .value=${this.lat}
                   @input=${(e: Event) => { this.lat = (e.target as HTMLInputElement).value; }}
@@ -566,115 +650,129 @@ export class AppControl extends LitElement {
                   .value=${this.lon}
                   @input=${(e: Event) => { this.lon = (e.target as HTMLInputElement).value; }}
                   ?disabled=${!this.connected} />
+                <button class="gps-btn"
+                  ?disabled=${!this.connected || this.gpsLoading}
+                  @click=${this._getGps}>
+                  ${this.gpsLoading ? '…' : 'GPS'}
+                </button>
               </div>
             </div>
+          </div>
 
-            <!-- Sampling params -->
-            <div class="section">
-              <div class="section-header">
-                <span class="section-label">Sampling</span>
-                <div class="section-right">
-                  ${this._stepDot(this.stepSampling)}
+          <!-- ③ Parameters -->
+          <div class="${cardClass(this.stepSampling)}">
+            <div class="step-header">
+              <span class="step-num">03</span>
+              <span class="step-title">Parameters</span>
+              <span class="step-status">${this._stepIcon(this.stepSampling)}</span>
+            </div>
+            <div class="step-body">
+
+              <!-- Timing row -->
+              <div class="param-grid">
+                <div class="param-item">
+                  <span class="param-label">Delay</span>
+                  <div class="presets">
+                    ${['0','1','6','12','24'].map(h => html`
+                      <button class="preset ${this.delayH === h ? 'active' : ''}"
+                        ?disabled=${!this.connected}
+                        @click=${() => { this.delayH = h; }}>
+                        ${h === '0' ? 'None' : h + 'h'}
+                      </button>
+                    `)}
+                  </div>
+                  <div class="param-input-wrap">
+                    <input class="input" type="number" placeholder="0" step="0.5" min="0"
+                      .value=${this.delayH}
+                      @input=${(e: Event) => { this.delayH = (e.target as HTMLInputElement).value; }}
+                      ?disabled=${!this.connected} />
+                    <span class="param-unit">h</span>
+                  </div>
+                </div>
+
+                <div class="param-item">
+                  <span class="param-label">Duration</span>
+                  <div class="presets">
+                    ${['1','6','12','24'].map(h => html`
+                      <button class="preset ${this.durationH === h ? 'active' : ''}"
+                        ?disabled=${!this.connected}
+                        @click=${() => { this.durationH = h; }}>
+                        ${h}h
+                      </button>
+                    `)}
+                  </div>
+                  <div class="param-input-wrap">
+                    <input class="input" type="number" placeholder="1" step="0.5" min="0"
+                      .value=${this.durationH}
+                      @input=${(e: Event) => { this.durationH = (e.target as HTMLInputElement).value; }}
+                      ?disabled=${!this.connected} />
+                    <span class="param-unit">h</span>
+                  </div>
                 </div>
               </div>
 
-              <div class="param-group">
-                <div class="param-label">Delay</div>
-                <div class="preset-row">
-                  ${['0','1','6','12','24'].map(h => html`
-                    <button class="preset ${this.delayH === h ? 'active' : ''}"
-                      ?disabled=${!this.connected}
-                      @click=${() => { this.delayH = h; }}>
-                      ${h === '0' ? 'None' : h + 'h'}
-                    </button>
-                  `)}
-                </div>
-                <div class="field-row">
-                  <input class="input" type="number" placeholder="0" step="0.5" min="0"
-                    .value=${this.delayH}
-                    @input=${(e: Event) => { this.delayH = (e.target as HTMLInputElement).value; }}
-                    ?disabled=${!this.connected} />
-                  <span class="unit">h</span>
-                </div>
-              </div>
+              <div class="divider"></div>
 
-              <div class="param-group">
-                <div class="param-label">Duration</div>
-                <div class="preset-row">
-                  ${['1','6','12','24'].map(h => html`
-                    <button class="preset ${this.durationH === h ? 'active' : ''}"
-                      ?disabled=${!this.connected}
-                      @click=${() => { this.durationH = h; }}>
-                      ${h}h
-                    </button>
-                  `)}
+              <!-- Airflow + Limits row -->
+              <div class="param-grid cols-3">
+                <div class="param-item">
+                  <span class="param-label">Flowrate</span>
+                  <div class="presets">
+                    ${['1.0','2.0','4.0'].map(v => html`
+                      <button class="preset ${this.flowrateSP === v ? 'active' : ''}"
+                        ?disabled=${!this.connected}
+                        @click=${() => { this.flowrateSP = v; }}>
+                        ${v}
+                      </button>
+                    `)}
+                  </div>
+                  <div class="param-input-wrap">
+                    <input class="input" type="number" placeholder="1.0" step="0.1" min="0"
+                      .value=${this.flowrateSP}
+                      @input=${(e: Event) => { this.flowrateSP = (e.target as HTMLInputElement).value; }}
+                      ?disabled=${!this.connected} />
+                    <span class="param-unit">L/s</span>
+                  </div>
                 </div>
-                <div class="field-row">
-                  <input class="input" type="number" placeholder="1" step="0.5" min="0"
-                    .value=${this.durationH}
-                    @input=${(e: Event) => { this.durationH = (e.target as HTMLInputElement).value; }}
-                    ?disabled=${!this.connected} />
-                  <span class="unit">h</span>
-                </div>
-              </div>
 
-              <div class="param-group">
-                <div class="param-label">Flowrate</div>
-                <div class="preset-row">
-                  ${['1.0','2.0','4.0'].map(v => html`
-                    <button class="preset ${this.flowrateSP === v ? 'active' : ''}"
-                      ?disabled=${!this.connected}
-                      @click=${() => { this.flowrateSP = v; }}>
-                      ${v} L/s
-                    </button>
-                  `)}
+                <div class="param-item">
+                  <span class="param-label">Max Humidity</span>
+                  <div class="presets">
+                    ${['60','80','100'].map(v => html`
+                      <button class="preset ${this.maxHumidity === v ? 'active' : ''}"
+                        ?disabled=${!this.connected}
+                        @click=${() => { this.maxHumidity = v; }}>
+                        ${v}%
+                      </button>
+                    `)}
+                  </div>
+                  <div class="param-input-wrap">
+                    <input class="input" type="number" placeholder="100" step="1" min="0" max="100"
+                      .value=${this.maxHumidity}
+                      @input=${(e: Event) => { this.maxHumidity = (e.target as HTMLInputElement).value; }}
+                      ?disabled=${!this.connected} />
+                    <span class="param-unit">%</span>
+                  </div>
                 </div>
-                <div class="field-row">
-                  <input class="input" type="number" placeholder="1.0" step="0.1" min="0"
-                    .value=${this.flowrateSP}
-                    @input=${(e: Event) => { this.flowrateSP = (e.target as HTMLInputElement).value; }}
-                    ?disabled=${!this.connected} />
-                  <span class="unit">L/s</span>
-                </div>
-              </div>
 
-              <div class="param-group">
-                <div class="param-label">Max Humidity</div>
-                <div class="preset-row">
-                  ${['60','80','100'].map(v => html`
-                    <button class="preset ${this.maxHumidity === v ? 'active' : ''}"
-                      ?disabled=${!this.connected}
-                      @click=${() => { this.maxHumidity = v; }}>
-                      ${v}%
-                    </button>
-                  `)}
-                </div>
-                <div class="field-row">
-                  <input class="input" type="number" placeholder="100" step="1" min="0" max="100"
-                    .value=${this.maxHumidity}
-                    @input=${(e: Event) => { this.maxHumidity = (e.target as HTMLInputElement).value; }}
-                    ?disabled=${!this.connected} />
-                  <span class="unit">%</span>
-                </div>
-              </div>
-
-              <div class="param-group">
-                <div class="param-label">Min State of Charge</div>
-                <div class="preset-row">
-                  ${['2','5','10','20'].map(v => html`
-                    <button class="preset ${this.minSoC === v ? 'active' : ''}"
-                      ?disabled=${!this.connected}
-                      @click=${() => { this.minSoC = v; }}>
-                      ${v}%
-                    </button>
-                  `)}
-                </div>
-                <div class="field-row">
-                  <input class="input" type="number" placeholder="2" step="1" min="0" max="100"
-                    .value=${this.minSoC}
-                    @input=${(e: Event) => { this.minSoC = (e.target as HTMLInputElement).value; }}
-                    ?disabled=${!this.connected} />
-                  <span class="unit">%</span>
+                <div class="param-item">
+                  <span class="param-label">Min SoC</span>
+                  <div class="presets">
+                    ${['2','5','10'].map(v => html`
+                      <button class="preset ${this.minSoC === v ? 'active' : ''}"
+                        ?disabled=${!this.connected}
+                        @click=${() => { this.minSoC = v; }}>
+                        ${v}%
+                      </button>
+                    `)}
+                  </div>
+                  <div class="param-input-wrap">
+                    <input class="input" type="number" placeholder="2" step="1" min="0" max="100"
+                      .value=${this.minSoC}
+                      @input=${(e: Event) => { this.minSoC = (e.target as HTMLInputElement).value; }}
+                      ?disabled=${!this.connected} />
+                    <span class="param-unit">%</span>
+                  </div>
                 </div>
               </div>
 

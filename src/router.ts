@@ -37,7 +37,7 @@ const routes: Route[] = [
   },
   {
     hash: '#sync',
-    title: 'AirSampler — Sync Logs',
+    title: 'AirSampler — Download Sample Data',
     render: () => html`<app-sync></app-sync>`,
     load: () => import('./pages/app-sync.js'),
   },
@@ -69,9 +69,15 @@ const routes: Route[] = [
   },
   {
     hash: '#lookup',
-    title: 'AirSampler — Tag Lookup',
+    title: 'AirSampler — Sample Lookup',
     render: () => html`<app-lookup></app-lookup>`,
     load: () => import('./pages/app-lookup.js'),
+  },
+  {
+    hash: '#admin-runs',
+    title: 'AirSampler — All Sample Runs',
+    render: () => html`<app-admin-runs></app-admin-runs>`,
+    load: () => import('./pages/app-admin-runs.js'),
   },
 ];
 

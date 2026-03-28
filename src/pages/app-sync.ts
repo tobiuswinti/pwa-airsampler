@@ -11,72 +11,44 @@ import {
   parseMeta,
   applyCarryForward,
 } from '../device-log-store';
-import { uploadPendingRuns, onUploadProgress, isUploading } from '../run-upload-service';
-import {
-  collection, query, getDocs, deleteDoc, doc, Timestamp, orderBy, limit,
-} from 'firebase/firestore';
-import { db } from '../firebase';
+import { uploadPendingRuns } from '../run-upload-service';
 
-// ── Types ─────────────────────────────────────────────────────────────────
 type SyncStatus = 'idle' | 'listing' | 'downloading' | 'done' | 'error';
-
-interface CloudDoc {
-  firebaseDocId: string;
-  tagId: string;
-  startTime: number;
-  uploadedAt: number;
-}
-
-const COLLECTION = 'device_runs';
 
 @customElement('app-sync')
 export class AppSync extends LitElement {
 
-  // ── Local / device state ─────────────────────────────────────────────
-  @state() private connected      = bleService.connStatus === 'connected';
+  @state() private connected  = bleService.connStatus === 'connected';
   @state() private runs: DeviceRun[] = getDeviceRuns();
   @state() private deviceOnlyRuns: Array<{idx: number; runId: string; tagId: string; startTime: number}> = [];
   @state() private syncStatus: SyncStatus = 'idle';
   @state() private syncMsg      = '';
-  @state() private syncProgress = '';
+  @state() private syncTotal    = 0;
+  @state() private syncDone     = 0;
 
-  // ── Cloud state ───────────────────────────────────────────────────────
-  @state() private allDocs:   CloudDoc[] = [];
-  @state() private loadingAll = true;
-
-  private _onStatus    = () => { this.connected = bleService.connStatus === 'connected'; };
+  private _onStatus    = () => {
+    this.connected = bleService.connStatus === 'connected';
+  };
   private _onSyncCheck = () => {
     this.deviceOnlyRuns = bleService.deviceRuns.filter(r => {
       if (r.runId) return !hasDeviceRunByRunId(r.runId);
       return !getDeviceRuns().some(local => local.id === r.idx);
     });
   };
-  private _unsub?:   () => void;
-  @state() private _online    = navigator.onLine;
-  @state() private _uploading = false;
-
-  private _onOnline  = () => { this._online = true; };
-  private _onOffline = () => { this._online = false; };
-
-  private _unsubUp?: () => void;
-  private _prevUploading = false;
+  private _unsub?: () => void;
 
   connectedCallback() {
     super.connectedCallback();
     bleService.addEventListener('status-changed',     this._onStatus);
     bleService.addEventListener('sync-check-changed', this._onSyncCheck);
-    this._unsub   = onDeviceRunsChanged(() => { this.runs = getDeviceRuns(); this._onSyncCheck(); });
-    this._unsubUp = onUploadProgress(() => {
+    this._unsub = onDeviceRunsChanged(() => {
       this.runs = getDeviceRuns();
-      const uploading = isUploading();
-      if (this._prevUploading && !uploading) this._loadCloud();
-      this._prevUploading = uploading;
-      this._uploading = uploading;
+      this._onSyncCheck();
     });
-    window.addEventListener('online',  this._onOnline);
-    window.addEventListener('offline', this._onOffline);
     this._onSyncCheck();
-    this._loadCloud();
+    if (this.connected) {
+      Promise.resolve().then(() => this._sync());
+    }
   }
 
   disconnectedCallback() {
@@ -84,38 +56,6 @@ export class AppSync extends LitElement {
     bleService.removeEventListener('status-changed',     this._onStatus);
     bleService.removeEventListener('sync-check-changed', this._onSyncCheck);
     this._unsub?.();
-    this._unsubUp?.();
-    window.removeEventListener('online',  this._onOnline);
-    window.removeEventListener('offline', this._onOffline);
-  }
-
-  // ── Cloud helpers ─────────────────────────────────────────────────────
-
-  private async _loadCloud() {
-    this.loadingAll = true;
-    try {
-      const snap = await getDocs(query(collection(db, COLLECTION), orderBy('startTime', 'desc'), limit(10)));
-      this.allDocs = snap.docs.map(d => this._toCloudDoc(d.id, d.data()));
-    } catch { /* ignore */ } finally { this.loadingAll = false; }
-  }
-
-  private _toCloudDoc(id: string, d: Record<string, unknown>): CloudDoc {
-    const uploadedAt = d['uploadedAt'] instanceof Timestamp
-      ? d['uploadedAt'].toMillis() : Number(d['uploadedAt'] ?? 0);
-    const rawStart = Number(d['startTime'] ?? 0);
-    return {
-      firebaseDocId: id,
-      tagId:         String(d['tagId'] ?? ''),
-      startTime:     rawStart < 1e12 ? rawStart * 1000 : rawStart,
-      uploadedAt,
-    };
-  }
-
-  private async _delete(docId: string) {
-    try {
-      await deleteDoc(doc(db, COLLECTION, docId));
-      this.allDocs = this.allDocs.filter(d => d.firebaseDocId !== docId);
-    } catch (err) { console.warn('[cloud] delete failed:', err); }
   }
 
   // ── Device sync ───────────────────────────────────────────────────────
@@ -133,7 +73,9 @@ export class AppSync extends LitElement {
 
   private async _sync() {
     if (this.syncStatus === 'listing' || this.syncStatus === 'downloading') return;
-    this.syncStatus = 'listing'; this.syncMsg = ''; this.syncProgress = '';
+    if (!this.connected) return;
+    this.syncStatus = 'listing'; this.syncMsg = '';
+    this.syncTotal = 0; this.syncDone = 0;
 
     const listLines = await bleService.sendCmd('listRuns');
     const listErr   = this._findError(listLines);
@@ -153,106 +95,83 @@ export class AppSync extends LitElement {
       }
     }
 
-    if (deviceRuns.length === 0) { this.syncStatus = 'done'; this.syncMsg = 'No runs on device.'; return; }
+    if (deviceRuns.length === 0) {
+      this.syncStatus = 'done'; this.syncMsg = 'No runs on device.'; return;
+    }
 
     const toDownload = deviceRuns.filter(r =>
       r.runId ? !hasDeviceRunByRunId(r.runId) : !getDeviceRuns().some(local => local.id === r.idx)
     );
     if (toDownload.length === 0) {
-      this.syncStatus = 'done';
-      this.syncMsg = `Already up to date — ${deviceRuns.length} run(s) on device.`;
-      return;
+      this.syncStatus = 'done'; this.syncMsg = 'Already up to date.'; return;
     }
 
     this.syncStatus = 'downloading';
-    let done = 0;
+    this.syncTotal  = toDownload.length;
+    this.syncDone   = 0;
+
     for (const r of toDownload) {
-      this.syncProgress = `${done} / ${toDownload.length}`;
       const logLines = await bleService.sendCmd(`getStateLogs -run ${r.idx}`);
       const logErr   = this._findError(logLines);
       if (logErr) { this.syncStatus = 'error'; this.syncMsg = `Run ${r.idx}: ${logErr}`; return; }
 
       const dataLines = logLines.filter(l => { const t = l.trim(); return t !== '' && !t.startsWith('{'); });
       if (dataLines.length < 3) {
-        this.syncStatus = 'error'; this.syncMsg = `Run ${r.idx}: not enough header lines`; return;
+        this.syncStatus = 'error'; this.syncMsg = `Run ${r.idx}: not enough data`; return;
       }
 
-      const fields  = ['timestamp', ...dataLines[0].split(',')];
-      const units   = ['ms',        ...dataLines[1].split(',')];
-      const meta    = parseMeta(dataLines[2]);
-      const rows    = applyCarryForward(dataLines.slice(3).map(l => l.split(','))).map((row, i) => [
+      const fields = ['timestamp', ...dataLines[0].split(',')];
+      const units  = ['ms',        ...dataLines[1].split(',')];
+      const meta   = parseMeta(dataLines[2]);
+      const rows   = applyCarryForward(dataLines.slice(3).map(l => l.split(','))).map((row, i) => [
         String(meta.startTime + i * meta.interval), ...row,
       ]);
 
       saveDeviceRun({ id: r.idx, downloadedAt: Date.now(), fields, units, meta, rows });
-      done++;
-      this.syncProgress = `${done} / ${toDownload.length}`;
+      this.syncDone++;
     }
 
     this.syncStatus = 'done';
-    this.syncMsg    = `Downloaded ${toDownload.length} new run(s). Total: ${deviceRuns.length}.`;
-    this.syncProgress = '';
+    this.syncMsg    = `Downloaded ${toDownload.length} run${toDownload.length !== 1 ? 's' : ''}.`;
     bleService.unsyncedCount = 0;
     bleService.dispatchEvent(new CustomEvent('sync-check-changed'));
     uploadPendingRuns();
   }
 
-  // ── Render helpers ────────────────────────────────────────────────────
+  // ── Helpers ───────────────────────────────────────────────────────────
 
   private _fmt(ms: number) {
-    return ms ? new Date(ms).toLocaleDateString() : '—';
+    return ms ? new Date(ms).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }) : '—';
   }
 
-  /** Unified run card used in all three sections. */
-  private _renderRunItem({
-    name, date, href, onDelete, dimmed,
-  }: {
-    name: string;
-    date: string;
-    href?: string;
-    onDelete?: () => void;
-    dimmed?: boolean;
-  }) {
+  private _renderRun(run: DeviceRun) {
+    const uploaded = !!run.firebaseId;
+    const errored  = !!run.uploadError;
     return html`
-      <div class="run-item ${dimmed ? 'run-item--dimmed' : ''}">
+      <div class="run-item">
         <div class="run-info">
-          <span class="run-name">${name}</span>
-          <span class="run-date">${date}</span>
+          <span class="run-name">${run.meta?.tagId || `Run #${run.id}`}</span>
+          <span class="run-date">${this._fmt(run.meta?.startTime)}</span>
         </div>
         <div class="run-actions">
-          ${href
-            ? html`<a class="btn-sm" href="${href}">View</a>`
-            : html`<span class="btn-sm btn-disabled">View</span>`}
-          ${onDelete
-            ? html`<button class="btn-sm btn-danger" @click=${onDelete}>Delete</button>`
-            : ''}
+          ${uploaded
+            ? html`<span class="cloud-badge cloud-ok" title="Uploaded to cloud">☁</span>`
+            : errored
+              ? html`<span class="cloud-badge cloud-err" title="${run.uploadError}">!</span>`
+              : html`<span class="cloud-badge cloud-pending" title="Pending upload">↑</span>`}
+          <a class="btn-sm" href="#run/${run.id}">View</a>
         </div>
       </div>`;
   }
 
   private _renderDeviceOnlyRun(r: {idx: number; tagId: string; startTime: number}) {
-    return this._renderRunItem({
-      name:   r.tagId || `Run #${r.idx}`,
-      date:   r.startTime ? new Date(r.startTime * 1000).toLocaleDateString() : '—',
-      dimmed: true,
-    });
-  }
-
-  private _renderRun(run: DeviceRun) {
-    return this._renderRunItem({
-      name: run.meta?.tagId || `Run #${run.id}`,
-      date: this._fmt(run.meta?.startTime),
-      href: `#run/${run.id}`,
-    });
-  }
-
-  private _renderCloudRow(d: CloudDoc) {
-    return this._renderRunItem({
-      name:     d.tagId || `Doc ${d.firebaseDocId.slice(0, 6)}`,
-      date:     this._fmt(d.startTime),
-      href:     `#cloud-run/${d.firebaseDocId}`,
-      onDelete: () => this._delete(d.firebaseDocId),
-    });
+    return html`
+      <div class="run-item run-item--dimmed">
+        <div class="run-info">
+          <span class="run-name">${r.tagId || `Run #${r.idx}`}</span>
+          <span class="run-date">${r.startTime ? new Date(r.startTime * 1000).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }) : '—'}</span>
+        </div>
+      </div>`;
   }
 
   // ── Styles ────────────────────────────────────────────────────────────
@@ -261,9 +180,9 @@ export class AppSync extends LitElement {
     :host {
       --bg:       #09090b;
       --card:     #111113;
-      --border:   #58585f;
+      --border:   #3f3f46;
       --fg:       #fafafa;
-      --muted-fg: #c4c4cc;
+      --muted-fg: #a1a1aa;
       --sans: 'Geist', 'Inter', system-ui, sans-serif;
       --mono: 'Share Tech Mono', monospace;
     }
@@ -294,7 +213,7 @@ export class AppSync extends LitElement {
       display: flex; align-items: center; justify-content: center;
       width: 32px; height: 32px;
       border: 1px solid var(--border);
-      border-radius: 6px;
+      border-radius: 8px;
       background: transparent;
       color: var(--muted-fg);
       cursor: pointer;
@@ -303,12 +222,13 @@ export class AppSync extends LitElement {
       font-size: 1rem;
     }
 
-    .back-btn:hover { color: var(--fg); border-color: #72727a; }
+    .back-btn:hover { color: var(--fg); border-color: #52525b; }
 
     .page-title {
-      font-size: 0.875rem;
+      font-size: 0.9375rem;
       font-weight: 600;
       color: var(--fg);
+      letter-spacing: -0.01em;
     }
 
     .content {
@@ -317,135 +237,172 @@ export class AppSync extends LitElement {
       padding: 20px;
       display: flex;
       flex-direction: column;
-      gap: 12px;
+      gap: 10px;
     }
 
-    .alert {
+    /* ── Connect banner ── */
+    .connect-banner {
       display: flex;
       align-items: center;
-      gap: 10px;
-      padding: 11px 14px;
-      border: 1px solid #3f1f1a;
-      border-radius: 8px;
-      background: rgba(239,68,68,0.06);
-      font-size: 0.8125rem;
-      color: #fca5a5;
-    }
-
-    .alert a {
-      margin-left: auto;
-      font-size: 0.75rem;
-      font-family: var(--mono);
-      color: var(--fg);
-      border: 1px solid var(--border);
-      padding: 3px 10px;
-      border-radius: 5px;
+      gap: 14px;
+      padding: 14px 16px;
+      border: 1px solid rgba(59,130,246,0.3);
+      border-radius: 12px;
+      background: rgba(59,130,246,0.06);
+      color: #93c5fd;
+      font-family: var(--sans);
       text-decoration: none;
-      white-space: nowrap;
+      transition: border-color 0.15s, background 0.15s;
     }
 
-    .card {
+    .connect-banner:hover {
+      border-color: rgba(59,130,246,0.5);
+      background: rgba(59,130,246,0.1);
+    }
+
+    .connect-banner .cb-icon {
+      width: 40px; height: 40px;
+      border-radius: 10px;
+      background: rgba(59,130,246,0.1);
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0;
+    }
+
+    .connect-banner .cb-label {
+      flex: 1;
+      font-size: 0.9375rem;
+      font-weight: 600;
+      letter-spacing: -0.01em;
+    }
+
+    .connect-banner .cb-arrow {
+      color: rgba(147,197,253,0.5);
+      font-size: 1.1rem;
+    }
+
+    /* ── Download action card ── */
+    .action-card {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      padding: 14px 16px;
       background: var(--card);
       border: 1px solid var(--border);
-      border-radius: 8px;
-      padding: 16px 18px;
+      border-radius: 12px;
+      cursor: pointer;
+      transition: background 0.15s, border-color 0.15s;
+      user-select: none;
     }
 
-    .card-header {
+    .action-card:hover:not(.action-card--busy) { background: #18181b; border-color: #52525b; }
+    .action-card--busy   { cursor: default; border-color: rgba(245,158,11,0.3); }
+    .action-card--done   { border-color: rgba(34,197,94,0.3); }
+    .action-card--error  { border-color: rgba(239,68,68,0.3); }
+
+    .action-icon {
+      width: 38px; height: 38px;
+      border-radius: 10px;
+      background: rgba(255,255,255,0.06);
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0;
+    }
+
+    .action-icon svg { width: 18px; height: 18px; }
+
+    .action-text {
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .action-label {
+      font-size: 0.875rem;
+      font-weight: 600;
+      color: var(--fg);
+      letter-spacing: -0.01em;
+    }
+
+    .action-desc {
+      font-size: 0.75rem;
+      color: var(--muted-fg);
+    }
+
+    .action-desc.ok      { color: #22c55e; }
+    .action-desc.error   { color: #f87171; }
+    .action-desc.busy    { color: #f59e0b; }
+
+    .action-right {
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      color: var(--muted-fg);
+    }
+
+    .progress-ring {
+      width: 22px; height: 22px;
+    }
+
+    .spinner {
+      width: 18px; height: 18px;
+      border: 2px solid #3f3f46;
+      border-top-color: #f59e0b;
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Section card ── */
+    .section-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      overflow: hidden;
+    }
+
+    .section-header {
       display: flex;
       align-items: center;
       justify-content: space-between;
-      margin-bottom: 14px;
+      padding: 13px 16px;
+      border-bottom: 1px solid var(--border);
     }
 
-    .card-title {
+    .section-title {
       font-size: 0.75rem;
-      font-weight: 500;
+      font-weight: 600;
       letter-spacing: 0.05em;
       text-transform: uppercase;
       color: var(--muted-fg);
     }
 
-    /* ── Flow connector ── */
-    .flow-connector {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 6px;
-      margin: -4px 0;
-    }
-
-    .flow-line {
-      width: 1px;
-      height: 12px;
-      background: var(--border);
-    }
-
-    .flow-sync-row {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      flex-wrap: wrap;
-      justify-content: center;
-    }
-
-    .btn-sync {
-      font-family: var(--sans);
-      font-size: 0.8125rem;
-      font-weight: 500;
-      padding: 7px 20px;
-      border-radius: 6px;
-      border: 1px solid var(--border);
-      cursor: pointer;
-      background: var(--fg);
-      color: #09090b;
-      transition: opacity 0.15s;
-    }
-
-    .btn-sync:hover:not(:disabled) { opacity: 0.88; }
-    .btn-sync:disabled { opacity: 0.3; cursor: not-allowed; }
-
-    .sync-status { font-family: var(--mono); font-size: 0.68rem; }
-    .sync-status.listing,
-    .sync-status.downloading { color: #a1a1aa; animation: blink 0.8s infinite; }
-    .sync-status.done  { color: #22c55e; }
-    .sync-status.error { color: #f87171; }
-
-    .flow-auto-label {
-      display: flex;
-      align-items: center;
-      gap: 5px;
+    .section-count {
       font-family: var(--mono);
-      font-size: 0.65rem;
-      color: #3f3f46;
-      letter-spacing: 0.04em;
+      font-size: 0.7rem;
+      color: #52525b;
     }
 
-    .flow-auto-label.uploading { color: #60a5fa; animation: blink 0.8s infinite; }
-    .flow-auto-label.offline   { color: #f87171; }
-    .flow-auto-label.idle      { color: #52525b; }
-
-    @keyframes blink { 50% { opacity: 0.4; } }
-
-    /* ── Runs list ── */
-    .runs-list { display: flex; flex-direction: column; gap: 6px; }
+    /* ── Run items ── */
+    .runs-list { display: flex; flex-direction: column; }
 
     .run-item {
       display: flex;
       align-items: center;
-      gap: 10px;
-      padding: 10px 12px;
-      border: 1px solid var(--border);
-      border-radius: 6px;
+      gap: 12px;
+      padding: 12px 16px;
+      border-bottom: 1px solid #1c1c1f;
       color: var(--fg);
     }
 
-    .run-item--dimmed { opacity: 0.45; }
+    .run-item:last-child { border-bottom: none; }
+    .run-item--dimmed { opacity: 0.4; }
 
-    .run-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+    .run-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
 
     .run-name {
-      font-size: 0.8125rem;
+      font-size: 0.875rem;
       font-weight: 500;
       color: var(--fg);
       overflow: hidden;
@@ -453,159 +410,146 @@ export class AppSync extends LitElement {
       white-space: nowrap;
     }
 
-    .run-date { font-family: var(--mono); font-size: 0.65rem; color: var(--muted-fg); }
+    .run-date {
+      font-family: var(--mono);
+      font-size: 0.6875rem;
+      color: var(--muted-fg);
+    }
 
-    .run-actions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+    .run-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+
+    .cloud-badge {
+      font-size: 0.65rem;
+      font-weight: 700;
+      width: 18px; height: 18px;
+      border-radius: 5px;
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0;
+    }
+
+    .cloud-ok      { color: #22c55e; background: rgba(34,197,94,0.1);   border: 1px solid rgba(34,197,94,0.25); }
+    .cloud-pending { color: #71717a; background: rgba(113,113,122,0.1); border: 1px solid rgba(113,113,122,0.2); }
+    .cloud-err     { color: #f87171; background: rgba(239,68,68,0.1);   border: 1px solid rgba(239,68,68,0.25); }
 
     .btn-sm {
       font-family: var(--sans);
       font-size: 0.75rem;
       font-weight: 500;
-      padding: 4px 11px;
-      border-radius: 5px;
+      padding: 5px 12px;
+      border-radius: 6px;
       cursor: pointer;
       background: transparent;
       border: 1px solid var(--border);
       color: var(--muted-fg);
       text-decoration: none;
       transition: border-color 0.15s, color 0.15s;
-      flex-shrink: 0;
       white-space: nowrap;
     }
 
-    .btn-sm:hover:not(.btn-disabled) { border-color: #72727a; color: var(--fg); }
-    .btn-sm.btn-danger:hover          { border-color: #ef4444; color: #f87171; }
-    .btn-sm.btn-disabled              { opacity: 0.25; cursor: default; pointer-events: none; }
+    .btn-sm:hover { border-color: #52525b; color: var(--fg); }
 
     .empty-msg {
-      font-family: var(--mono);
-      font-size: 0.75rem;
+      font-size: 0.8125rem;
       color: var(--muted-fg);
       text-align: center;
-      padding: 24px 0;
-    }
-
-    .info-msg {
-      font-family: var(--mono);
-      font-size: 0.75rem;
-      color: var(--muted-fg);
-      text-align: center;
-      padding: 20px 0;
-    }
-
-    .card-count {
-      font-family: var(--mono);
-      font-size: 0.72rem;
-      color: #52525b;
+      padding: 28px 16px;
     }
   `;
 
   // ── Render ────────────────────────────────────────────────────────────
 
   render() {
-    const busy         = this.syncStatus === 'listing' || this.syncStatus === 'downloading';
-    const deviceRows   = this.deviceOnlyRuns;
-    const localPending = this.runs.filter(r => !r.firebaseId);
+    const busy       = this.syncStatus === 'listing' || this.syncStatus === 'downloading';
+    const localRuns  = this.runs;
+
+    // Action card appearance
+    let actionClass = 'action-card';
+    let actionDesc  = '';
+    let descClass   = '';
+    let rightEl;
+
+    if (busy) {
+      actionClass += ' action-card--busy';
+      descClass = 'busy';
+      if (this.syncStatus === 'listing') {
+        actionDesc = 'Listing runs on device…';
+      } else {
+        actionDesc = `Downloading ${this.syncDone} of ${this.syncTotal}…`;
+      }
+      rightEl = html`<div class="spinner"></div>`;
+    } else if (this.syncStatus === 'done') {
+      actionClass += ' action-card--done';
+      actionDesc = this.syncMsg;
+      descClass  = 'ok';
+      rightEl = html`<svg width="18" height="18" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" stroke="#22c55e" stroke-width="1.5"/><path d="M8 12l3 3 5-5" stroke="#22c55e" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+    } else if (this.syncStatus === 'error') {
+      actionClass += ' action-card--error';
+      actionDesc = this.syncMsg;
+      descClass  = 'error';
+      rightEl = html`<svg width="18" height="18" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" stroke="#ef4444" stroke-width="1.5"/><path d="M12 8v4M12 16h.01" stroke="#ef4444" stroke-width="1.5" stroke-linecap="round"/></svg>`;
+    } else {
+      actionDesc = this.connected ? 'Fetch new runs from device' : 'Connect a device to download';
+      rightEl = html`<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" style="opacity:0.3"><path d="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z"/></svg>`;
+    }
 
     return html`
       <main>
         <div class="page-header">
           <a class="back-btn" href="${resolveRouterPath()}">←</a>
-          <span class="page-title">Runs</span>
+          <span class="page-title">Download Sample Data</span>
         </div>
 
         <div class="content">
 
           ${!this.connected ? html`
-            <div class="alert">
-              <span>Device not connected</span>
-              <a href="${resolveRouterPath('connect')}">Connect →</a>
+            <a class="connect-banner" href="${resolveRouterPath('connect')}">
+              <div class="cb-icon">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="#93c5fd">
+                  <path d="M1 9l2 2c4.97-4.97 13.03-4.97 18 0l2-2C16.93 2.93 7.08 2.93 1 9zm8 8l3 3 3-3a4.237 4.237 0 00-6 0zm-4-4l2 2a7.074 7.074 0 0110 0l2-2C15.14 9.14 8.87 9.14 5 13z"/>
+                </svg>
+              </div>
+              <span class="cb-label">Connect to device to download runs</span>
+              <span class="cb-arrow">›</span>
+            </a>
+          ` : ''}
+
+          <!-- Download action -->
+          <div class="${actionClass}" @click=${() => !busy && this._sync()}>
+            <div class="action-icon">
+              <svg viewBox="0 0 24 24" fill="#a1a1aa">
+                <path d="M19.35 10.04A7.49 7.49 0 0012 4C9.11 4 6.6 5.64 5.35 8.04A5.994 5.994 0 000 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96zM17 13l-5 5-5-5h3V9h4v4h3z"/>
+              </svg>
+            </div>
+            <div class="action-text">
+              <span class="action-label">Download Sample Data</span>
+              <span class="action-desc ${descClass}">${actionDesc}</span>
+            </div>
+            <div class="action-right">${rightEl}</div>
+          </div>
+
+          <!-- On device (not yet downloaded) -->
+          ${this.connected && this.deviceOnlyRuns.length > 0 ? html`
+            <div class="section-card">
+              <div class="section-header">
+                <span class="section-title">On Device</span>
+                <span class="section-count">${this.deviceOnlyRuns.length}</span>
+              </div>
+              <div class="runs-list">
+                ${this.deviceOnlyRuns.map(r => this._renderDeviceOnlyRun(r))}
+              </div>
             </div>
           ` : ''}
 
-          <!-- Device -->
-          <div class="card">
-            <div class="card-header">
-              <span class="card-title">Device</span>
-              <span class="card-count">${deviceRows.length}</span>
+          <!-- Downloaded runs -->
+          <div class="section-card">
+            <div class="section-header">
+              <span class="section-title">Downloaded</span>
+              <span class="section-count">${localRuns.length}</span>
             </div>
-            ${deviceRows.length === 0
-              ? html`<div class="empty-msg">All runs downloaded.</div>`
-              : html`<div class="runs-list">${deviceRows.map(r => this._renderDeviceOnlyRun(r))}</div>`
+            ${localRuns.length === 0
+              ? html`<div class="empty-msg">No runs downloaded yet.</div>`
+              : html`<div class="runs-list">${localRuns.map(r => this._renderRun(r))}</div>`
             }
-          </div>
-
-          <!-- Sync connector -->
-          <div class="flow-connector">
-            <div class="flow-line"></div>
-            <div class="flow-sync-row">
-              <button class="btn-sync" ?disabled=${!this.connected || busy} @click=${this._sync}>
-                ${busy ? 'Syncing…' : 'Sync to local'}
-              </button>
-              ${this.syncStatus !== 'idle' ? html`
-                <span class="sync-status ${this.syncStatus}">
-                  ${this.syncStatus === 'listing'     ? 'Listing…'
-                  : this.syncStatus === 'downloading' ? `${this.syncProgress}`
-                  : this.syncMsg}
-                </span>
-              ` : ''}
-            </div>
-            <div class="flow-line"></div>
-          </div>
-
-          <!-- Local (pending upload) -->
-          <div class="card">
-            <div class="card-header">
-              <span class="card-title">Local</span>
-              <span class="card-count">${localPending.length}</span>
-            </div>
-            ${localPending.length === 0
-              ? html`<div class="empty-msg">All local runs uploaded.</div>`
-              : html`<div class="runs-list">${localPending.map(run => this._renderRun(run))}</div>`
-            }
-          </div>
-
-          <!-- Auto-upload connector -->
-          <div class="flow-connector">
-            <div class="flow-line"></div>
-            ${this._uploading ? html`
-              <span class="flow-auto-label uploading">
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor">
-                  <path d="M19.35 10.04A7.49 7.49 0 0012 4C9.11 4 6.6 5.64 5.35 8.04A5.994 5.994 0 000 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96zM14 13v4h-4v-4H7l5-5 5 5h-3z"/>
-                </svg>
-                uploading…
-              </span>
-            ` : !this._online ? html`
-              <span class="flow-auto-label offline">
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor">
-                  <path d="M19.35 10.04A7.49 7.49 0 0012 4c-1.48 0-2.85.43-4.01 1.17l1.46 1.46A5.497 5.497 0 0112 6c2.76 0 5 2.24 5 5v1h1c1.65 0 3 1.35 3 3 0 1.08-.59 2.01-1.45 2.52l1.45 1.45C22.16 18.07 23 16.64 23 15c0-2.64-2.05-4.78-4.65-4.96zM3 3.27L1.27 5 4.36 8.09A5.994 5.994 0 000 14c0 3.31 2.69 6 6 6h11.73l2 2L21 20.73 3 3.27zM7.73 10l8 8H6c-2.21 0-4-1.79-4-4 0-2.05 1.54-3.72 3.54-3.95L7.73 10z"/>
-                </svg>
-                no network
-              </span>
-            ` : html`
-              <span class="flow-auto-label idle">
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor">
-                  <path d="M19.35 10.04A7.49 7.49 0 0012 4C9.11 4 6.6 5.64 5.35 8.04A5.994 5.994 0 000 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96zM14 13v4h-4v-4H7l5-5 5 5h-3z"/>
-                </svg>
-                auto-upload
-              </span>
-            `}
-            <div class="flow-line"></div>
-          </div>
-
-          <!-- Cloud (last 10) -->
-          <div class="card">
-            <div class="card-header">
-              <span class="card-title">Cloud</span>
-              <span class="card-count">${this.allDocs.length}</span>
-            </div>
-            ${this.allDocs.length === 0 ? html`
-              <p class="info-msg">${this.loadingAll ? 'Loading…' : 'No runs in cloud yet.'}</p>
-            ` : html`
-              <div class="runs-list">
-                ${this.allDocs.map((d: CloudDoc) => this._renderCloudRow(d))}
-              </div>
-            `}
           </div>
 
         </div>

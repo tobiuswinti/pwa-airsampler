@@ -114,9 +114,12 @@ export function parseMeta(metaLine: string): RunMeta {
   // Device emits startTime in Unix seconds; normalise to ms for JS Date compatibility.
   const rawStart = Number(kv['startTime'] ?? 0);
   const startTime = rawStart < 1e12 ? rawStart * 1000 : rawStart;
+  // Device emits interval in seconds (e.g. interval=1); normalise to ms.
+  const rawInterval = Number(kv['interval'] ?? 1);
+  const interval = rawInterval < 100 ? rawInterval * 1000 : rawInterval;
   const result: RunMeta = {
     startTime,
-    interval:  Number(kv['interval']  ?? 1000),
+    interval,
     tagId:     kv['tagId']  ?? '',
     lat:       kv['lat']    ?? '',
     lon:       kv['lon']    ?? '',

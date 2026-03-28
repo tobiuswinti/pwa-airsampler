@@ -3,6 +3,7 @@ import { state, customElement } from 'lit/decorators.js';
 import { resolveRouterPath } from '../router';
 import { bleService, ConnStatus, LiveState } from '../ble-service';
 import { getDeviceRuns, onDeviceRunsChanged } from '../device-log-store';
+import { authService } from '../auth-service';
 
 @customElement('app-home')
 export class AppHome extends LitElement {
@@ -11,24 +12,21 @@ export class AppHome extends LitElement {
   @state() private liveState: LiveState | null = bleService.liveState;
   @state() private unsyncedCount: number = bleService.unsyncedCount;
   @state() private pendingUpload: number = getDeviceRuns().filter(r => !r.firebaseId).length;
-  @state() private adminMode: boolean = localStorage.getItem('adminMode') === 'true';
+  @state() private adminMode: boolean = authService.isAdmin;
 
   private _onStatus    = () => { this.connStatus    = bleService.connStatus; };
   private _onState     = () => { this.liveState     = bleService.liveState; };
   private _onSyncCheck = () => { this.unsyncedCount = bleService.unsyncedCount; };
   private _onRuns      = () => { this.pendingUpload = getDeviceRuns().filter(r => !r.firebaseId).length; };
+  private _onAuth      = () => { this.adminMode     = authService.isAdmin; };
   private _unsubRuns: (() => void) | null = null;
-
-  private _toggleAdmin() {
-    this.adminMode = !this.adminMode;
-    localStorage.setItem('adminMode', String(this.adminMode));
-  }
 
   connectedCallback() {
     super.connectedCallback();
     bleService.addEventListener('status-changed',     this._onStatus);
     bleService.addEventListener('state-changed',      this._onState);
     bleService.addEventListener('sync-check-changed', this._onSyncCheck);
+    authService.addEventListener('auth-changed',      this._onAuth);
     this._unsubRuns = onDeviceRunsChanged(this._onRuns);
   }
 
@@ -37,6 +35,7 @@ export class AppHome extends LitElement {
     bleService.removeEventListener('status-changed',     this._onStatus);
     bleService.removeEventListener('state-changed',      this._onState);
     bleService.removeEventListener('sync-check-changed', this._onSyncCheck);
+    authService.removeEventListener('auth-changed',      this._onAuth);
     this._unsubRuns?.();
   }
 
@@ -44,11 +43,10 @@ export class AppHome extends LitElement {
     :host {
       --bg:       #09090b;
       --card:     #111113;
-      --border:   #58585f;
+      --border:   #3f3f46;
       --fg:       #fafafa;
-      --muted-fg: #c4c4cc;
+      --muted-fg: #a1a1aa;
       --sans: 'Geist', 'Inter', system-ui, sans-serif;
-      --mono: 'Share Tech Mono', monospace;
     }
 
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -64,310 +62,238 @@ export class AppHome extends LitElement {
       padding: 0 0 80px;
     }
 
-    .page-header {
-      width: 100%;
-      max-width: 480px;
-      padding: 28px 20px 4px;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-    }
-
-    .app-name {
-      font-size: 0.875rem;
-      font-weight: 600;
-      color: var(--fg);
-      letter-spacing: 0.01em;
-    }
-
-    .conn-dot {
-      width: 8px; height: 8px;
-      border-radius: 50%;
-      flex-shrink: 0;
-    }
-
-    .conn-dot.connected    { background: #22c55e; box-shadow: 0 0 6px #22c55e88; }
-    .conn-dot.disconnected { background: var(--muted-fg); }
-    .conn-dot.connecting   { background: #f59e0b; animation: blink 0.8s infinite; }
-    .conn-dot.failed       { background: #ef4444; }
-
-    @keyframes blink { 50% { opacity: 0.3; } }
-
     .content {
       width: 100%;
       max-width: 480px;
-      padding: 16px 20px;
+      padding: 20px 20px;
       display: flex;
       flex-direction: column;
-      gap: 4px;
+      gap: 8px;
     }
 
-    .group-label {
+    /* ── Section label ── */
+    .section-label {
       font-size: 0.6875rem;
       font-weight: 500;
-      letter-spacing: 0.06em;
+      letter-spacing: 0.07em;
       text-transform: uppercase;
-      color: var(--muted-fg);
-      padding: 12px 2px 6px;
+      color: #52525b;
+      padding: 10px 2px 4px;
     }
 
-    /* ── Nav cards ── */
+    /* ── Nav card ── */
     .nav-card {
       display: flex;
       align-items: center;
-      gap: 12px;
-      padding: 13px 14px;
+      gap: 14px;
+      padding: 14px 16px;
       border: 1px solid var(--border);
-      border-radius: 8px;
+      border-radius: 12px;
       background: var(--card);
       text-decoration: none;
       color: var(--fg);
       cursor: pointer;
-      transition: background 0.15s, border-color 0.15s;
-      margin-bottom: 4px;
+      transition: background 0.15s, border-color 0.15s, transform 0.1s;
     }
 
-    .nav-card:hover { background: #18181b; border-color: #3f3f46; }
+    .nav-card:hover {
+      background: #18181b;
+      border-color: #52525b;
+      transform: translateY(-1px);
+    }
+
+    .nav-card:active { transform: translateY(0); }
 
     .nav-card.disabled {
-      opacity: 0.38;
+      opacity: 0.3;
       pointer-events: none;
     }
 
-    .nav-card.danger:hover { border-color: #ef4444; }
+    .nav-card.primary {
+      background: #18181b;
+      border-color: #52525b;
+    }
 
+    .nav-card.primary:hover {
+      background: #1c1c1f;
+      border-color: #71717a;
+    }
+
+    .nav-card.danger { border-color: rgba(239,68,68,0.3); background: rgba(239,68,68,0.04); }
+    .nav-card.danger:hover { border-color: rgba(239,68,68,0.5); background: rgba(239,68,68,0.08); transform: none; }
+
+    /* ── Icon ── */
     .nav-icon {
-      width: 36px; height: 36px;
-      border-radius: 8px;
+      width: 40px; height: 40px;
+      border-radius: 10px;
       display: flex; align-items: center; justify-content: center;
       flex-shrink: 0;
     }
 
-    .nav-icon svg { width: 18px; height: 18px; }
+    .nav-icon svg { width: 20px; height: 20px; }
 
+    /* ── Text ── */
     .nav-text {
       display: flex;
       flex-direction: column;
-      gap: 2px;
+      gap: 3px;
       flex: 1;
       min-width: 0;
     }
 
     .nav-label {
-      font-size: 0.875rem;
-      font-weight: 500;
+      font-size: 0.9375rem;
+      font-weight: 600;
       letter-spacing: -0.01em;
     }
+
+    .nav-label.danger { color: #fca5a5; }
 
     .nav-desc {
       font-size: 0.75rem;
       color: var(--muted-fg);
     }
 
-    .nav-arrow {
-      color: var(--muted-fg);
-      font-size: 1rem;
+    /* ── Right side ── */
+    .nav-right {
+      display: flex;
+      align-items: center;
+      gap: 8px;
       flex-shrink: 0;
-      transition: transform 0.15s;
     }
 
-    .nav-card:hover .nav-arrow { transform: translateX(2px); }
-
-    .separator {
-      height: 1px;
-      background: var(--border);
-      margin: 10px 0 0;
+    .nav-arrow {
+      color: #52525b;
+      font-size: 1.1rem;
+      transition: transform 0.15s, color 0.15s;
     }
+
+    .nav-card:hover .nav-arrow { transform: translateX(2px); color: var(--muted-fg); }
+    .nav-card.danger .nav-arrow { color: rgba(239,68,68,0.4); }
 
     .nav-badge {
       font-size: 0.6875rem;
       font-weight: 600;
-      padding: 2px 7px;
+      padding: 2px 8px;
       border-radius: 10px;
-      background: rgba(245,158,11,0.15);
-      border: 1px solid rgba(245,158,11,0.35);
+      background: rgba(245,158,11,0.12);
+      border: 1px solid rgba(245,158,11,0.3);
       color: #f59e0b;
-      flex-shrink: 0;
     }
 
     .footer-note {
       font-size: 0.72rem;
-      color: var(--muted-fg);
+      color: #3f3f46;
       text-align: center;
-      padding: 20px 0 0;
+      padding: 16px 0 0;
       line-height: 1.6;
     }
-
-    .admin-toggle-row {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 14px 2px 0;
-    }
-
-    .admin-toggle-label {
-      font-size: 0.75rem;
-      color: var(--muted-fg);
-    }
-
-    .switch {
-      position: relative;
-      width: 36px;
-      height: 20px;
-      flex-shrink: 0;
-    }
-
-    .switch input { opacity: 0; width: 0; height: 0; }
-
-    .switch-track {
-      position: absolute;
-      inset: 0;
-      border-radius: 10px;
-      background: #3f3f46;
-      border: 1px solid var(--border);
-      cursor: pointer;
-      transition: background 0.2s;
-    }
-
-    .switch input:checked + .switch-track { background: #22c55e; border-color: #22c55e; }
-
-    .switch-track::after {
-      content: '';
-      position: absolute;
-      top: 2px; left: 2px;
-      width: 14px; height: 14px;
-      border-radius: 50%;
-      background: #fff;
-      transition: transform 0.2s;
-    }
-
-    .switch input:checked + .switch-track::after { transform: translateX(16px); }
   `;
 
   render() {
     const connected  = this.connStatus === 'connected';
-    const bleClass   = connected ? '' : 'disabled';
     const sampState  = this.liveState?.samplingState;
     const isSampling = connected && !!sampState && sampState !== 'IDLE';
     const syncBadge  = this.unsyncedCount + this.pendingUpload;
 
     return html`
       <main>
-        <div class="page-header">
-          <span class="app-name">AirSampler</span>
-          <span class="conn-dot ${this.connStatus}"></span>
-        </div>
-
         <div class="content">
 
-          <span class="group-label">Actions</span>
+          <span class="section-label">Actions</span>
 
-          <!-- Connect / Disconnect -->
-          ${connected
-            ? html`
-              <div class="nav-card danger" @click=${() => bleService.disconnect()}>
-                <div class="nav-icon" style="background:rgba(239,68,68,0.1);">
-                  <svg viewBox="0 0 24 24" fill="#ef4444"><path d="M17.71 7.71L12 2h-1v7.59L6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 11 14.41V22h1l5.71-5.71-4.3-4.29 4.3-4.29zM13 5.83l1.88 1.88L13 9.59V5.83zm1.88 10.46L13 18.17v-3.76l1.88 1.88z"/></svg>
-                </div>
-                <div class="nav-text">
-                  <span class="nav-label">Disconnect</span>
-                  <span class="nav-desc">Connected to AirSampler</span>
-                </div>
-                <span class="nav-arrow">›</span>
-              </div>`
-            : html`
-              <a class="nav-card" href="${resolveRouterPath('connect')}">
-                <div class="nav-icon" style="background:rgba(255,255,255,0.06);">
-                  <svg viewBox="0 0 24 24" fill="#a1a1aa"><path d="M17.71 7.71L12 2h-1v7.59L6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 11 14.41V22h1l5.71-5.71-4.3-4.29 4.3-4.29zM13 5.83l1.88 1.88L13 9.59V5.83zm1.88 10.46L13 18.17v-3.76l1.88 1.88z"/></svg>
-                </div>
-                <div class="nav-text">
-                  <span class="nav-label">Connect</span>
-                  <span class="nav-desc">Pair with AirSampler via Bluetooth</span>
-                </div>
-                <span class="nav-arrow">›</span>
-              </a>`
-          }
-
-          <!-- Start / Stop Sampling -->
           ${isSampling
             ? html`
               <div class="nav-card danger" @click=${() => bleService.sendCmd('stopSampling')}>
-                <div class="nav-icon" style="background:rgba(239,68,68,0.1);">
+                <div class="nav-icon" style="background:rgba(239,68,68,0.08);">
                   <svg viewBox="0 0 24 24" fill="#ef4444"><path d="M6 6h12v12H6z"/></svg>
                 </div>
                 <div class="nav-text">
-                  <span class="nav-label">Stop Sampling</span>
-                  <span class="nav-desc">Sampling is currently running</span>
+                  <span class="nav-label danger">Stop Sampling</span>
+                  <span class="nav-desc">Sampling is currently active</span>
                 </div>
-                <span class="nav-arrow">›</span>
+                <div class="nav-right"><span class="nav-arrow">›</span></div>
               </div>`
             : html`
-              <a class="nav-card ${bleClass}" href="${resolveRouterPath('control')}">
+              <a class="nav-card primary" href="${resolveRouterPath('control')}">
                 <div class="nav-icon" style="background:rgba(255,255,255,0.06);">
-                  <svg viewBox="0 0 24 24" fill="#a1a1aa"><path d="M12 2a10 10 0 100 20A10 10 0 0012 2zm-1 14V8l6 4-6 4z"/></svg>
+                  <svg viewBox="0 0 24 24" fill="#e4e4e7"><path d="M12 2a10 10 0 100 20A10 10 0 0012 2zm-1 14V8l6 4-6 4z"/></svg>
                 </div>
                 <div class="nav-text">
                   <span class="nav-label">Start Sampling</span>
-                  <span class="nav-desc">Configure &amp; start a sampling run</span>
+                  <span class="nav-desc">Configure &amp; launch a sampling run</span>
                 </div>
-                <span class="nav-arrow">›</span>
+                <div class="nav-right"><span class="nav-arrow">›</span></div>
               </a>`
           }
 
-          <span class="group-label">Monitor</span>
-
-          <a class="nav-card ${bleClass}" href="${resolveRouterPath('status')}">
-            <div class="nav-icon" style="background:rgba(255,255,255,0.06);">
-              <svg viewBox="0 0 24 24" fill="#a1a1aa"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 2a8 8 0 110 16A8 8 0 0112 4zm0 3a5 5 0 100 10A5 5 0 0012 7zm0 2a3 3 0 110 6 3 3 0 010-6z"/></svg>
-            </div>
-            <div class="nav-text">
-              <span class="nav-label">Status</span>
-              <span class="nav-desc">Live sensor state &amp; graphs</span>
-            </div>
-            <span class="nav-arrow">›</span>
-          </a>
-
-          <span class="group-label">Data</span>
-
           <a class="nav-card" href="${resolveRouterPath('sync')}">
             <div class="nav-icon" style="background:rgba(255,255,255,0.06);">
-              <svg viewBox="0 0 24 24" fill="#a1a1aa"><path d="M12 4V1L8 5l4 4V6c3.31 0 6 2.69 6 6 0 1.01-.25 1.97-.7 2.8l1.46 1.46C19.54 15.03 20 13.57 20 12c0-4.42-3.58-8-8-8zm0 14c-3.31 0-6-2.69-6-6 0-1.01.25-1.97.7-2.8L5.24 7.74C4.46 8.97 4 10.43 4 12c0 4.42 3.58 8 8 8v3l4-4-4-4v3z"/></svg>
+              <svg viewBox="0 0 24 24" fill="#a1a1aa">
+                <path d="M19.35 10.04A7.49 7.49 0 0012 4C9.11 4 6.6 5.64 5.35 8.04A5.994 5.994 0 000 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96zM17 13l-5 5-5-5h3V9h4v4h3z"/>
+              </svg>
             </div>
             <div class="nav-text">
-              <span class="nav-label">Runs</span>
-              <span class="nav-desc">Sync, browse and look up sampling runs</span>
+              <span class="nav-label">Download Sample Data</span>
+              <span class="nav-desc">Fetch new sampling runs from device</span>
             </div>
-            ${syncBadge > 0 ? html`<span class="nav-badge">${syncBadge}</span>` : ''}
-            <span class="nav-arrow">›</span>
+            <div class="nav-right">
+              ${syncBadge > 0 ? html`<span class="nav-badge">${syncBadge}</span>` : ''}
+              <span class="nav-arrow">›</span>
+            </div>
           </a>
+
+          <a class="nav-card " href="${resolveRouterPath('status')}">
+            <div class="nav-icon" style="background:rgba(255,255,255,0.06);">
+              <svg viewBox="0 0 24 24" fill="#a1a1aa"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 14H9V8h2v8zm4 0h-2V8h2v8z"/></svg>
+            </div>
+            <div class="nav-text">
+              <span class="nav-label">Device Status</span>
+              <span class="nav-desc">Live sensor readings &amp; device state</span>
+            </div>
+            <div class="nav-right"><span class="nav-arrow">›</span></div>
+          </a>
+
+          <span class="section-label">Data</span>
 
           <a class="nav-card" href="${resolveRouterPath('lookup')}">
             <div class="nav-icon" style="background:rgba(255,255,255,0.06);">
-              <svg viewBox="0 0 24 24" fill="#a1a1aa"><path d="M17.5 2h-11C5.12 2 4 3.12 4 4.5v15C4 20.88 5.12 22 6.5 22h11c1.38 0 2.5-1.12 2.5-2.5v-15C20 3.12 18.88 2 17.5 2zm-5 17c-.83 0-1.5-.67-1.5-1.5S11.67 16 12.5 16s1.5.67 1.5 1.5S13.33 19 12.5 19zm3.5-5h-7v-1.5c0-1.93 1.57-3.5 3.5-3.5S16 10.57 16 12.5V14zm-3.5-5C10.57 9 9 7.43 9 5.5h1.5c0 1.1.9 2 2 2s2-.9 2-2H16c0 1.93-1.57 3.5-3.5 3.5z"/></svg>
+              <svg viewBox="0 0 24 24" fill="#a1a1aa"><path d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0016 9.5 6.5 6.5 0 109.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>
             </div>
             <div class="nav-text">
-              <span class="nav-label">Tag Lookup</span>
-              <span class="nav-desc">Find runs by NFC tag or tag ID</span>
+              <span class="nav-label">Sample Lookup</span>
+              <span class="nav-desc">Find runs by NFC tag or sample ID</span>
             </div>
-            <span class="nav-arrow">›</span>
+            <div class="nav-right"><span class="nav-arrow">›</span></div>
           </a>
 
           ${this.adminMode ? html`
-            <div class="separator"></div>
-            <span class="group-label">Admin</span>
+            <span class="section-label">Admin</span>
 
-            <a class="nav-card ${bleClass}" href="${resolveRouterPath('admin')}">
+            <a class="nav-card" href="${resolveRouterPath('admin-runs')}">
+              <div class="nav-icon" style="background:rgba(255,255,255,0.06);">
+                <svg viewBox="0 0 24 24" fill="#a1a1aa"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-7 3c1.93 0 3.5 1.57 3.5 3.5S13.93 13 12 13s-3.5-1.57-3.5-3.5S10.07 6 12 6zm7 13H5v-.23c0-.62.28-1.2.76-1.58C7.47 15.82 9.64 15 12 15s4.53.82 6.24 2.19c.48.38.76.97.76 1.58V19z"/></svg>
+              </div>
+              <div class="nav-text">
+                <span class="nav-label">All Sample Runs</span>
+                <span class="nav-desc">Browse, search and delete cloud runs</span>
+              </div>
+              <div class="nav-right"><span class="nav-arrow">›</span></div>
+            </a>
+
+            <a class="nav-card " href="${resolveRouterPath('admin')}">
               <div class="nav-icon" style="background:rgba(255,255,255,0.06);">
                 <svg viewBox="0 0 24 24" fill="#a1a1aa"><path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/></svg>
               </div>
               <div class="nav-text">
-                <span class="nav-label">Admin Actions</span>
+                <span class="nav-label">Device Actions</span>
                 <span class="nav-desc">Fan, servo, log management</span>
               </div>
-              <span class="nav-arrow">›</span>
+              <div class="nav-right"><span class="nav-arrow">›</span></div>
             </a>
-
           ` : ''}
+
+          <span class="section-label">About</span>
 
           <a class="nav-card" href="${resolveRouterPath('about')}">
             <div class="nav-icon" style="background:rgba(255,255,255,0.06);">
@@ -377,16 +303,8 @@ export class AppHome extends LitElement {
               <span class="nav-label">About</span>
               <span class="nav-desc">Project info &amp; documentation</span>
             </div>
-            <span class="nav-arrow">›</span>
+            <div class="nav-right"><span class="nav-arrow">›</span></div>
           </a>
-
-          <div class="admin-toggle-row">
-            <span class="admin-toggle-label">Admin mode</span>
-            <label class="switch">
-              <input type="checkbox" .checked=${this.adminMode} @change=${this._toggleAdmin}>
-              <span class="switch-track"></span>
-            </label>
-          </div>
 
           <p class="footer-note">Requires Chrome on Android for BLE &amp; NFC features.</p>
 

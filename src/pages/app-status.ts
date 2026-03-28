@@ -242,28 +242,43 @@ export class AppStatus extends LitElement {
       gap: 12px;
     }
 
-    .alert {
+    .connect-banner {
       display: flex;
       align-items: center;
-      gap: 10px;
-      padding: 12px 14px;
-      border: 1px solid #3f1f1a;
-      border-radius: 8px;
-      background: rgba(239,68,68,0.06);
-      font-size: 0.8125rem;
-      color: #fca5a5;
+      gap: 14px;
+      padding: 14px 16px;
+      border: 1px solid rgba(59,130,246,0.3);
+      border-radius: 12px;
+      background: rgba(59,130,246,0.06);
+      color: #93c5fd;
+      font-family: var(--sans);
+      text-decoration: none;
+      transition: border-color 0.15s, background 0.15s;
     }
 
-    .alert a {
-      margin-left: auto;
-      font-size: 0.75rem;
-      font-family: var(--mono);
-      color: var(--fg);
-      border: 1px solid var(--border);
-      padding: 3px 10px;
-      border-radius: 5px;
-      text-decoration: none;
-      white-space: nowrap;
+    .connect-banner:hover {
+      border-color: rgba(59,130,246,0.5);
+      background: rgba(59,130,246,0.1);
+    }
+
+    .connect-banner .cb-icon {
+      width: 40px; height: 40px;
+      border-radius: 10px;
+      background: rgba(59,130,246,0.1);
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0;
+    }
+
+    .connect-banner .cb-label {
+      flex: 1;
+      font-size: 0.9375rem;
+      font-weight: 600;
+      letter-spacing: -0.01em;
+    }
+
+    .connect-banner .cb-arrow {
+      color: rgba(147,197,253,0.5);
+      font-size: 1.1rem;
     }
 
     /* ── Cards ── */
@@ -711,10 +726,15 @@ export class AppStatus extends LitElement {
         <div class="content">
 
           ${!connected ? html`
-            <div class="alert">
-              <span>Device not connected</span>
-              <a href="${resolveRouterPath('connect')}">Connect →</a>
-            </div>
+            <a class="connect-banner" href="${resolveRouterPath('connect')}">
+              <div class="cb-icon">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="#93c5fd">
+                  <path d="M1 9l2 2c4.97-4.97 13.03-4.97 18 0l2-2C16.93 2.93 7.08 2.93 1 9zm8 8l3 3 3-3a4.237 4.237 0 00-6 0zm-4-4l2 2a7.074 7.074 0 0110 0l2-2C15.14 9.14 8.87 9.14 5 13z"/>
+                </svg>
+              </div>
+              <span class="cb-label">Connect to device to see live status</span>
+              <span class="cb-arrow">›</span>
+            </a>
           ` : ''}
 
           <!-- ── Sampling card ── -->
