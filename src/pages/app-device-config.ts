@@ -283,8 +283,8 @@ export class AppDeviceConfig extends LitElement {
     return html`
       <main>
         <div class="page-header">
-          <a class="back-btn" href="${resolveRouterPath('admin')}">←</a>
-          <span class="page-title">Device Configuration</span>
+          <a class="back-btn" href="${resolveRouterPath()}">←</a>
+          <span class="page-title">Set Device Name</span>
         </div>
 
         <div class="content">

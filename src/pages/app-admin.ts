@@ -17,6 +17,13 @@ export class AppAdmin extends LitElement {
 
   @state() private connected = bleService.connStatus === 'connected';
 
+  // ── Device Name ───────────────────────────────────────────────────────
+  @state() private deviceName     = '';
+  @state() private nfcStatus: ActionState = 'idle';
+  @state() private nfcMsg         = '';
+  @state() private bleNameStatus: ActionState = 'idle';
+  @state() private bleNameMsg     = '';
+
   // ── Mechanical ────────────────────────────────────────────────────────
   @state() private fanFlowrate    = '1.0';
   @state() private fanResult      = idle();
@@ -77,6 +84,52 @@ export class AppAdmin extends LitElement {
       setResult({ state: 'error', msg: this._errMsg(lines) });
     }
     return lines;
+  }
+
+  // ── Device Name ───────────────────────────────────────────────────────
+
+  private _generateName() {
+    const bytes = crypto.getRandomValues(new Uint8Array(4));
+    const hex   = Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('').toUpperCase();
+    this.deviceName   = `AirSampler-${hex}`;
+    this.nfcStatus    = 'idle';
+    this.bleNameStatus = 'idle';
+  }
+
+  private async _writeNameToRfid() {
+    const name = this.deviceName.trim();
+    if (!name) return;
+    if (!('NDEFReader' in window)) {
+      this.nfcStatus = 'error';
+      this.nfcMsg    = 'NFC not available on this device';
+      return;
+    }
+    try {
+      this.nfcStatus = 'running';
+      this.nfcMsg    = '';
+      const writer = new (window as any).NDEFReader();
+      await writer.write({ records: [{ recordType: 'text', data: name }] });
+      this.nfcStatus = 'ok';
+      this.nfcMsg    = 'Written to tag';
+    } catch (e: any) {
+      this.nfcStatus = 'error';
+      this.nfcMsg    = e?.message ?? 'Write failed';
+    }
+  }
+
+  private async _writeNameToDevice() {
+    const name = this.deviceName.trim();
+    if (!name || !this.connected) return;
+    this.bleNameStatus = 'running';
+    this.bleNameMsg    = '';
+    const lines = await bleService.sendCmd(`setBLEName -name ${name}`);
+    if (lines.some(l => l.startsWith('OK'))) {
+      this.bleNameStatus = 'ok';
+      this.bleNameMsg    = 'Name updated — reconnect to apply';
+    } else {
+      this.bleNameStatus = 'error';
+      this.bleNameMsg    = lines.find(l => l.startsWith('ERROR')) ?? 'Unknown error';
+    }
   }
 
   // ── Fan ───────────────────────────────────────────────────────────────
@@ -163,11 +216,15 @@ export class AppAdmin extends LitElement {
 
   // ── Render helpers ────────────────────────────────────────────────────
 
-  private _badge(r: ActionResult) {
-    if (r.state === 'idle') return '';
-    if (r.state === 'running') return html`<span class="badge running">…</span>`;
-    if (r.state === 'ok')     return html`<span class="badge ok">${r.msg || 'OK'}</span>`;
-    return html`<span class="badge error">${r.msg}</span>`;
+  private _badge(state: ActionState, msg: string) {
+    if (state === 'idle')    return '';
+    if (state === 'running') return html`<span class="badge running">…</span>`;
+    if (state === 'ok')      return html`<span class="badge ok">${msg || 'OK'}</span>`;
+    return html`<span class="badge error">${msg}</span>`;
+  }
+
+  private _badgeR(r: ActionResult) {
+    return this._badge(r.state, r.msg);
   }
 
   // ── Styles ────────────────────────────────────────────────────────────
@@ -235,45 +292,24 @@ export class AppAdmin extends LitElement {
       gap: 12px;
     }
 
+    /* ── Connect banner ── */
     .connect-banner {
-      display: flex;
-      align-items: center;
-      gap: 14px;
-      padding: 14px 16px;
-      border: 1px solid rgba(59,130,246,0.3);
-      border-radius: 12px;
-      background: rgba(59,130,246,0.06);
-      color: #93c5fd;
-      font-family: var(--sans);
-      text-decoration: none;
+      display: flex; align-items: center; gap: 14px; padding: 14px 16px;
+      border: 1px solid rgba(59,130,246,0.3); border-radius: 12px;
+      background: rgba(59,130,246,0.06); color: #93c5fd;
+      font-family: var(--sans); text-decoration: none;
       transition: border-color 0.15s, background 0.15s;
     }
-
-    .connect-banner:hover {
-      border-color: rgba(59,130,246,0.5);
-      background: rgba(59,130,246,0.1);
-    }
-
+    .connect-banner:hover { border-color: rgba(59,130,246,0.5); background: rgba(59,130,246,0.1); }
     .connect-banner .cb-icon {
-      width: 40px; height: 40px;
-      border-radius: 10px;
+      width: 40px; height: 40px; border-radius: 10px;
       background: rgba(59,130,246,0.1);
-      display: flex; align-items: center; justify-content: center;
-      flex-shrink: 0;
+      display: flex; align-items: center; justify-content: center; flex-shrink: 0;
     }
+    .connect-banner .cb-label { flex: 1; font-size: 0.9375rem; font-weight: 600; letter-spacing: -0.01em; }
+    .connect-banner .cb-arrow { color: rgba(147,197,253,0.5); font-size: 1.1rem; }
 
-    .connect-banner .cb-label {
-      flex: 1;
-      font-size: 0.9375rem;
-      font-weight: 600;
-      letter-spacing: -0.01em;
-    }
-
-    .connect-banner .cb-arrow {
-      color: rgba(147,197,253,0.5);
-      font-size: 1.1rem;
-    }
-
+    /* ── Card ── */
     .card {
       background: var(--card);
       border: 1px solid var(--border);
@@ -287,9 +323,41 @@ export class AppAdmin extends LitElement {
       letter-spacing: 0.05em;
       text-transform: uppercase;
       color: var(--muted-fg);
+      margin-bottom: 4px;
+    }
+
+    /* ── Step instructions ── */
+    .steps {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
       margin-bottom: 16px;
     }
 
+    .steps li {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      font-size: 0.8125rem;
+      color: var(--muted-fg);
+      line-height: 1.5;
+    }
+
+    .step-num {
+      flex-shrink: 0;
+      width: 18px; height: 18px;
+      border-radius: 50%;
+      border: 1px solid #3f3f46;
+      background: #18181b;
+      color: #71717a;
+      font-size: 0.65rem;
+      font-weight: 600;
+      display: flex; align-items: center; justify-content: center;
+      margin-top: 1px;
+    }
+
+    /* ── Action rows ── */
     .action-row {
       display: flex;
       align-items: center;
@@ -313,6 +381,7 @@ export class AppAdmin extends LitElement {
       margin-bottom: 2px;
     }
 
+    /* ── Inputs ── */
     .input {
       font-family: var(--mono);
       font-size: 0.8125rem;
@@ -349,6 +418,7 @@ export class AppAdmin extends LitElement {
       flex-shrink: 0;
     }
 
+    /* ── Buttons ── */
     .btn {
       font-family: var(--sans);
       font-size: 0.8125rem;
@@ -366,6 +436,13 @@ export class AppAdmin extends LitElement {
 
     .btn:hover:not(:disabled) { border-color: #72727a; background: #18181b; }
     .btn:disabled { opacity: 0.3; cursor: not-allowed; }
+
+    .btn-generate {
+      border-color: #3d3d50;
+      color: #a5b4fc;
+      background: rgba(99,102,241,0.06);
+    }
+    .btn-generate:hover:not(:disabled) { background: rgba(99,102,241,0.12); border-color: #6366f1; }
 
     .btn-danger {
       border-color: #7f1d1d;
@@ -410,6 +487,7 @@ export class AppAdmin extends LitElement {
     .segment:hover:not(.active) { background: #18181b; }
     .segment.active { background: #27272a; color: var(--fg); }
 
+    /* ── Badges ── */
     .badge {
       font-family: var(--mono);
       font-size: 0.68rem;
@@ -452,18 +530,34 @@ export class AppAdmin extends LitElement {
       color: #f87171;
       flex-shrink: 0;
     }
+
+    .hint {
+      font-family: var(--mono);
+      font-size: 0.72rem;
+      color: #52525b;
+      width: 100%;
+      margin-top: 2px;
+    }
+
+    .name-row {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      margin-bottom: 12px;
+    }
   `;
 
   // ── Render ────────────────────────────────────────────────────────────
 
   render() {
-    const dis = !this.connected;
+    const dis    = !this.connected;
+    const noName = !this.deviceName.trim();
 
     return html`
       <main>
         <div class="page-header">
           <a class="back-btn" href="${resolveRouterPath()}">←</a>
-          <span class="page-title">Admin</span>
+          <span class="page-title">Device Setup</span>
         </div>
 
         <div class="content">
@@ -480,22 +574,96 @@ export class AppAdmin extends LitElement {
             </a>
           ` : ''}
 
-          <!-- Device Configuration -->
-          <a class="connect-banner" href="${resolveRouterPath('device-config')}" style="color:#a5b4fc; border-color:rgba(99,102,241,0.3); background:rgba(99,102,241,0.06);">
-            <div class="cb-icon" style="background:rgba(99,102,241,0.1);">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="#a5b4fc">
-                <path d="M19.14 12.94c.04-.3.06-.61.06-.94s-.02-.64-.07-.94l2.03-1.58a.49.49 0 00.12-.61l-1.92-3.32a.488.488 0 00-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54a.484.484 0 00-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87a.49.49 0 00.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58a.49.49 0 00-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32a.49.49 0 00-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/>
-              </svg>
+          <!-- Set Device Name -->
+          <div class="card">
+            <div class="card-title">Set Device Name</div>
+            <ol class="steps">
+              <li>
+                <span class="step-num">1</span>
+                <span>Generate a unique name or type one manually in the field below.</span>
+              </li>
+              <li>
+                <span class="step-num">2</span>
+                <span>Tap <strong>Write to Device</strong> while connected via Bluetooth to rename the device. You will need to reconnect afterwards.</span>
+              </li>
+              <li>
+                <span class="step-num">3</span>
+                <span>Hold an NFC tag close to the phone and tap <strong>Write to Tag</strong> to program the tag with the device name. This tag can later be scanned on the Connect page to connect automatically.</span>
+              </li>
+            </ol>
+
+            <div class="name-row">
+              <input
+                class="input input-md"
+                type="text"
+                placeholder="e.g. AirSampler-A3F2B1C0"
+                .value=${this.deviceName}
+                @input=${(e: Event) => {
+                  this.deviceName    = (e.target as HTMLInputElement).value;
+                  this.nfcStatus     = 'idle';
+                  this.bleNameStatus = 'idle';
+                }}
+              />
+              <button class="btn btn-generate" @click=${this._generateName}>Generate</button>
             </div>
-            <span class="cb-label" style="color:#a5b4fc;">Device Configuration</span>
-            <span class="cb-arrow" style="color:rgba(165,180,252,0.5);">›</span>
-          </a>
+
+            <div class="action-row">
+              <span class="action-label">Write to device via BLE</span>
+              <button class="btn"
+                ?disabled=${noName || dis || this.bleNameStatus === 'running'}
+                @click=${this._writeNameToDevice}>
+                ${this.bleNameStatus === 'running' ? 'Sending…' : 'Write to Device'}
+              </button>
+              ${this._badge(this.bleNameStatus, this.bleNameMsg)}
+            </div>
+
+            <div class="action-row">
+              <span class="action-label">Write to NFC tag</span>
+              <button class="btn"
+                ?disabled=${noName || this.nfcStatus === 'running'}
+                @click=${this._writeNameToRfid}>
+                ${this.nfcStatus === 'running' ? 'Hold tag…' : 'Write to Tag'}
+              </button>
+              ${this._badge(this.nfcStatus, this.nfcMsg)}
+              ${this.nfcStatus === 'running' ? html`
+                <span class="hint">Hold an NFC tag close to the phone</span>
+              ` : ''}
+            </div>
+          </div>
+
+          <!-- Servo Calibration -->
+          <div class="card">
+            <div class="card-title">Servo Calibration</div>
+            <ol class="steps">
+              <li>
+                <span class="step-num">1</span>
+                <span>Make sure the servo arm is in the <strong>fully open</strong> position before starting.</span>
+              </li>
+              <li>
+                <span class="step-num">2</span>
+                <span>Tap <strong>Start Calibration</strong>. The device will move the servo through its range automatically.</span>
+              </li>
+              <li>
+                <span class="step-num">3</span>
+                <span>Wait approximately 16 seconds. Do not move the device until "Calibration complete" appears.</span>
+              </li>
+            </ol>
+            <div class="action-row">
+              <button class="btn"
+                ?disabled=${dis || this.zeroResult.state === 'running'}
+                @click=${this._servoZero}>
+                ${this.zeroResult.state === 'running' ? 'Calibrating…' : 'Start Calibration'}
+              </button>
+              ${this.zeroResult.state === 'running' ? html`
+                <span class="zero-progress">~${this.zeroSecondsLeft}s remaining</span>
+              ` : this._badgeR(this.zeroResult)}
+            </div>
+          </div>
 
           <!-- Mechanical -->
           <div class="card">
             <div class="card-title">Mechanical</div>
 
-            <!-- setFan -->
             <div class="action-row">
               <span class="action-label">Fan override</span>
               <input class="input input-sm" type="number" placeholder="1.0" step="0.1" min="0"
@@ -506,10 +674,9 @@ export class AppAdmin extends LitElement {
               <button class="btn" ?disabled=${dis || !this.fanFlowrate.trim()} @click=${this._setFan}>
                 Set Fan
               </button>
-              ${this._badge(this.fanResult)}
+              ${this._badgeR(this.fanResult)}
             </div>
 
-            <!-- setServo -->
             <div class="action-row">
               <span class="action-label">Servo position</span>
               <div class="segment-group">
@@ -528,20 +695,7 @@ export class AppAdmin extends LitElement {
               <button class="btn" ?disabled=${dis || !this.servoValue.trim()} @click=${this._setServo}>
                 Set Servo
               </button>
-              ${this._badge(this.servoResult)}
-            </div>
-
-            <!-- servoZero -->
-            <div class="action-row">
-              <span class="action-label">Servo calibration</span>
-              <button class="btn"
-                ?disabled=${dis || this.zeroResult.state === 'running'}
-                @click=${this._servoZero}>
-                ${this.zeroResult.state === 'running' ? 'Calibrating…' : 'Run servoZero'}
-              </button>
-              ${this.zeroResult.state === 'running' ? html`
-                <span class="zero-progress">~${this.zeroSecondsLeft}s remaining</span>
-              ` : this._badge(this.zeroResult)}
+              ${this._badgeR(this.servoResult)}
             </div>
           </div>
 
@@ -549,7 +703,6 @@ export class AppAdmin extends LitElement {
           <div class="card">
             <div class="card-title">Log Management</div>
 
-            <!-- setLogLevel -->
             <div class="action-row">
               <span class="action-label">Log level</span>
               <select class="input" .value=${this.logSink}
@@ -572,10 +725,9 @@ export class AppAdmin extends LitElement {
               <button class="btn" ?disabled=${dis} @click=${this._setLogLevel}>
                 Set
               </button>
-              ${this._badge(this.logLevelResult)}
+              ${this._badgeR(this.logLevelResult)}
             </div>
 
-            <!-- getLogs -->
             <div class="action-row">
               <span class="action-label">Fetch logs</span>
               <input class="input input-sm" type="number" placeholder="from #0" min="0" step="1"
@@ -586,13 +738,12 @@ export class AppAdmin extends LitElement {
                 @click=${this._getLogs}>
                 Get Logs
               </button>
-              ${this._badge(this.getLogsResult)}
+              ${this._badgeR(this.getLogsResult)}
               ${this.logsOutput.length > 0 ? html`
                 <div class="logs-output">${this.logsOutput.join('\n')}</div>
               ` : ''}
             </div>
 
-            <!-- clearLogs -->
             <div class="action-row">
               <span class="action-label">Clear system logs</span>
               ${this.clearLogsConfirm ? html`
@@ -607,11 +758,10 @@ export class AppAdmin extends LitElement {
                   @click=${() => { this.clearLogsConfirm = true; }}>
                   Clear Logs
                 </button>
-                ${this._badge(this.clearLogsResult)}
+                ${this._badgeR(this.clearLogsResult)}
               `}
             </div>
 
-            <!-- clearStateLogs -->
             <div class="action-row">
               <span class="action-label">Clear all run files</span>
               ${this.clearStateConfirm ? html`
@@ -626,7 +776,7 @@ export class AppAdmin extends LitElement {
                   @click=${() => { this.clearStateConfirm = true; }}>
                   Clear State Logs
                 </button>
-                ${this._badge(this.clearStateResult)}
+                ${this._badgeR(this.clearStateResult)}
               `}
             </div>
 

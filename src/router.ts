@@ -81,7 +81,7 @@ const routes: Route[] = [
   },
   {
     hash: '#device-config',
-    title: 'AirSampler — Device Configuration',
+    title: 'AirSampler — Set Device Name',
     render: () => html`<app-device-config></app-device-config>`,
     load: () => import('./pages/app-device-config.js'),
   },

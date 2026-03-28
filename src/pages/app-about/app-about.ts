@@ -80,8 +80,8 @@ export class AppAbout extends LitElement {
       width: 100%;
       border-radius: 10px;
       border: 1px solid var(--border);
-      object-fit: cover;
-      max-height: 260px;
+      object-fit: contain;
+      background: #0d0d0f;
       display: block;
     }
 
