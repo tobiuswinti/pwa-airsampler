@@ -7,13 +7,14 @@ import { resolveRouterPath } from '../router';
 @customElement('app-top-bar')
 export class AppTopBar extends LitElement {
 
-  @state() private _user     = authService.user;
-  @state() private _isAdmin  = authService.isAdmin;
+  @state() private _user       = authService.user;
+  @state() private _isAdmin    = authService.isAdmin;
   @state() private _conn: ConnStatus      = bleService.connStatus;
   @state() private _live: LiveState | null = bleService.liveState;
+  @state() private _deviceName: string | null = bleService.deviceName;
 
   private _onAuth   = () => { this._user = authService.user; this._isAdmin = authService.isAdmin; };
-  private _onStatus = () => { this._conn = bleService.connStatus; };
+  private _onStatus = () => { this._conn = bleService.connStatus; this._deviceName = bleService.deviceName; };
   private _onState  = () => { this._live = bleService.liveState; };
 
   connectedCallback() {
@@ -156,6 +157,20 @@ export class AppTopBar extends LitElement {
       flex-shrink: 0;
     }
 
+    .user-name {
+      font-family: var(--sans);
+      font-size: 0.75rem;
+      color: var(--muted-fg);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 140px;
+    }
+
+    @media (max-width: 360px) {
+      .user-name { display: none; }
+    }
+
     .role-badge {
       font-family: var(--sans);
       font-size: 0.6rem;
@@ -213,6 +228,7 @@ export class AppTopBar extends LitElement {
         <div class="device-status">
           <span class="conn-dot ${conn}"></span>
           ${connected && live ? html`
+            ${this._deviceName ? html`<span class="conn-label">${this._deviceName}</span>` : ''}
             ${notIdle ? html`<span class="state-badge ${ss}">${ss.toUpperCase()}</span>` : ''}
             <span class="batt" style="color:${this._battColor(live.soc)}">${live.soc.toFixed(0)}%</span>
           ` : conn === 'connecting' ? html`
@@ -229,6 +245,7 @@ export class AppTopBar extends LitElement {
             ${u.photoURL
               ? html`<img class="avatar" src="${u.photoURL}" alt="">`
               : html`<div class="avatar-placeholder"></div>`}
+            <span class="user-name">${u.displayName ?? u.email?.split('@')[0] ?? ''}</span>
             <button class="btn-signout" @click=${() => authService.signOut()}>Sign out</button>
           </div>
         ` : html`<div></div>`}

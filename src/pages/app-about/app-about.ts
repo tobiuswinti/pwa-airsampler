@@ -314,6 +314,10 @@ export class AppAbout extends LitElement {
           <div class="card">
             <div class="card-title">Technical</div>
             <div class="info-row">
+              <span class="info-key">Version</span>
+              <span class="info-val">v${__APP_VERSION__}</span>
+            </div>
+            <div class="info-row">
               <span class="info-key">Platform</span>
               <span class="badge badge-blue">ESP32 + BLE</span>
             </div>

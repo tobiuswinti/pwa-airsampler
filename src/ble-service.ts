@@ -46,6 +46,7 @@ interface PendingCmd {
 // ── Service ────────────────────────────────────────────────────────────────
 class BleService extends EventTarget {
   connStatus: ConnStatus = 'disconnected';
+  deviceName: string | null = null;
   liveState: LiveState | null = null;
   sysLog: string[] = [];
   unsyncedCount: number = 0;
@@ -118,7 +119,8 @@ class BleService extends EventTarget {
   }
 
   private async _connectToDevice(device: BluetoothDevice): Promise<void> {
-    this.bleDevice = device;
+    this.bleDevice  = device;
+    this.deviceName = device.name ?? null;
     this.bleDevice.addEventListener('gattserverdisconnected', () => this._onDisconnected());
 
     const server = await this.bleDevice.gatt!.connect();
@@ -152,6 +154,7 @@ class BleService extends EventTarget {
     if (this.bleDevice?.gatt?.connected) this.bleDevice.gatt.disconnect();
     this.bleDevice    = null;
     this.liveState    = null;
+    this.deviceName   = null;
     this.unsyncedCount = 0;
     this.deviceRuns    = [];
     this._prevSamplingState = null;
@@ -221,7 +224,8 @@ class BleService extends EventTarget {
   private _onDisconnected() {
     if (!this.isManualDisconnect) {
       this.isManualDisconnect = false;
-      this.liveState = null;
+      this.liveState  = null;
+      this.deviceName = null;
       this._setStatus('disconnected');
     }
   }
