@@ -180,6 +180,8 @@ export class AppRun extends LitElement {
   private _onHash = () => this._load();
   private _charts = new Map<string, ComputedChart>();
   private _boundListeners = new Set<string>();
+  private _statePts: { ts: number; state: string }[] = [];
+  private _stateListenerBound = false;
 
   connectedCallback() {
     super.connectedCallback();
@@ -399,7 +401,10 @@ export class AppRun extends LitElement {
       const pts = run.rows
         .map(row => ({ ts: Number(row[tsIdx]), state: resolveStateName(String(row[stateIdx])) }))
         .filter(p => isFinite(p.ts));
-      if (pts.length >= 2) this._drawStateChart('chart-states', pts);
+      if (pts.length >= 2) {
+        this._statePts = pts;
+        this._drawStateChart('chart-states', pts, null);
+      }
     }
   }
 
@@ -590,9 +595,26 @@ export class AppRun extends LitElement {
         this._renderChart(id, currentChart, null);
       });
     }
+
+    // State chart hover
+    if (!this._stateListenerBound && this._statePts.length >= 2) {
+      const stateCanvas = this.shadowRoot?.querySelector<HTMLCanvasElement>('#chart-states');
+      if (stateCanvas) {
+        this._stateListenerBound = true;
+        stateCanvas.addEventListener('mousemove', (e: MouseEvent) => {
+          if (!this._statePts.length) return;
+          const r    = stateCanvas.getBoundingClientRect();
+          const relX = e.clientX - r.left;
+          this._drawStateChart('chart-states', this._statePts, relX);
+        });
+        stateCanvas.addEventListener('mouseleave', () => {
+          this._drawStateChart('chart-states', this._statePts, null);
+        });
+      }
+    }
   }
 
-  private _drawStateChart(canvasId: string, ptsRaw: { ts: number; state: string }[]) {
+  private _drawStateChart(canvasId: string, ptsRaw: { ts: number; state: string }[], hoverX: number | null) {
     const canvas = this.shadowRoot?.querySelector<HTMLCanvasElement>(`#${canvasId}`);
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
@@ -642,13 +664,54 @@ export class AppRun extends LitElement {
       }
     }
 
-
     // Time axis
     const tickMs = pickTickMs(dur);
     ctx.font = '9px monospace'; ctx.textAlign = 'center'; ctx.fillStyle = '#52525b';
     for (let el = 0; el <= dur + tickMs * 0.01; el += tickMs) {
       const x = PL + cW * el / dur;
       ctx.fillText(fmtTick(el), Math.min(x, W - PR - 4), PT + cH + PB - 5);
+    }
+
+    // Hover tooltip
+    if (hoverX !== null) {
+      const t = tStart + dur * hoverX / cW;
+      // Find which segment hoverX falls in
+      let segIdx = pts.length - 1;
+      for (let i = 0; i < pts.length - 1; i++) {
+        if (t < pts[i + 1].ts) { segIdx = i; break; }
+      }
+      const seg   = pts[segIdx];
+      const color = resolveStateColor(seg.state, uniqueStates);
+      const elStr = fmtTick(seg.ts - tStart);
+
+      // Vertical cursor line
+      const hx = tsToX(seg.ts + (segIdx < pts.length - 1 ? (pts[segIdx + 1].ts - seg.ts) / 2 : 0));
+      const cursorX = Math.max(1, Math.min(cW - 1, hoverX));
+      ctx.strokeStyle = 'rgba(255,255,255,0.15)';
+      ctx.lineWidth   = 1;
+      ctx.beginPath(); ctx.moveTo(cursorX, PT); ctx.lineTo(cursorX, PT + cH); ctx.stroke();
+
+      // Tooltip
+      const PAD  = 8, lh = 14;
+      const tipW = 120;
+      const tipH = PAD * 2 + lh * 2;
+      const spaceR = cW - cursorX;
+      const tipX   = spaceR > tipW + 12 ? cursorX + 8 : cursorX - tipW - 8;
+      const tipY   = PT + cH / 2 - tipH / 2;
+
+      ctx.fillStyle   = '#1c1c1f';
+      ctx.strokeStyle = '#3f3f46';
+      ctx.lineWidth   = 1;
+      roundRect(ctx, tipX, tipY, tipW, tipH, 5);
+      ctx.fill();
+      roundRect(ctx, tipX, tipY, tipW, tipH, 5);
+      ctx.stroke();
+
+      ctx.font = '9px monospace'; ctx.textAlign = 'left';
+      ctx.fillStyle = '#71717a';
+      ctx.fillText(elStr, tipX + PAD, tipY + PAD + 9);
+      ctx.fillStyle = color;
+      ctx.fillText(seg.state, tipX + PAD, tipY + PAD + 9 + lh);
     }
   }
 
