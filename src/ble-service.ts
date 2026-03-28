@@ -89,8 +89,7 @@ class BleService extends EventTarget {
     try {
       this._setStatus('connecting');
       const device = await navigator.bluetooth.requestDevice({
-        filters: name ? [{ name }] : undefined,
-        acceptAllDevices: !name,
+        filters: [name ? { name } : { namePrefix: DEVICE_NAME }],
         optionalServices: [SERVICE_UUID],
       });
       await this._connectToDevice(device);
