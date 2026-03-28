@@ -202,6 +202,31 @@ export class AppHome extends LitElement {
 
           <span class="section-label">Actions</span>
 
+          ${connected
+            ? html`
+              <div class="nav-card danger" @click=${() => bleService.disconnect()}>
+                <div class="nav-icon" style="background:rgba(239,68,68,0.08);">
+                  <svg viewBox="0 0 24 24" fill="#ef4444"><path d="M13 4.07V1L8.45 5.55 13 10V6.09c2.84.48 5 2.94 5 5.91s-2.16 5.43-5 5.91v2.02c3.95-.49 7-3.85 7-7.93s-3.05-7.44-7-7.93zm-7.9 7.93c0-2.97 2.16-5.43 5-5.91V3.07C6.05 3.56 3 6.92 3 11s3.05 7.44 7 7.93v-2.02c-2.84-.48-5-2.94-5-5.91z"/></svg>
+                </div>
+                <div class="nav-text">
+                  <span class="nav-label danger">Disconnect</span>
+                  <span class="nav-desc">Disconnect from current device</span>
+                </div>
+                <div class="nav-right"><span class="nav-arrow">›</span></div>
+              </div>`
+            : html`
+              <a class="nav-card" href="${resolveRouterPath('connect')}">
+                <div class="nav-icon" style="background:rgba(255,255,255,0.06);">
+                  <svg viewBox="0 0 24 24" fill="#a1a1aa"><path d="M1 9l2 2c4.97-4.97 13.03-4.97 18 0l2-2C16.93 2.93 7.08 2.93 1 9zm8 8l3 3 3-3a4.237 4.237 0 00-6 0zm-4-4l2 2a7.074 7.074 0 0110 0l2-2C15.14 9.14 8.87 9.14 5 13z"/></svg>
+                </div>
+                <div class="nav-text">
+                  <span class="nav-label">Connect Device</span>
+                  <span class="nav-desc">Pair with an AirSampler via Bluetooth</span>
+                </div>
+                <div class="nav-right"><span class="nav-arrow">›</span></div>
+              </a>`
+          }
+
           ${isSampling
             ? html`
               <div class="nav-card danger" @click=${() => bleService.sendCmd('stopSampling')}>

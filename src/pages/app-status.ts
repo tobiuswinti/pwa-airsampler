@@ -642,6 +642,7 @@ export class AppStatus extends LitElement {
     .sampling-stop-row {
       display: flex;
       align-items: center;
+      justify-content: flex-end;
       gap: 8px;
       margin-top: 14px;
       padding-top: 12px;
