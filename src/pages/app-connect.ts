@@ -3,7 +3,7 @@ import { state, customElement } from 'lit/decorators.js';
 import { resolveRouterPath } from '../router';
 import { bleService, ConnStatus } from '../ble-service';
 
-type NfcScanStatus = 'unavailable' | 'scanning' | 'found' | 'no-match';
+type NfcScanStatus = 'unavailable' | 'scanning' | 'found';
 
 @customElement('app-connect')
 export class AppConnect extends LitElement {
@@ -54,11 +54,11 @@ export class AppConnect extends LitElement {
         this.scannedName = name;
         this.nfcStatus   = 'found';
 
-        // Try silent connect to a previously-paired device first
+        // Try silent connect to a previously-paired device first.
+        // If not known, open the BLE picker immediately (NFC read counts as user gesture).
         const ok = await bleService.connectByName(name);
         if (!ok) {
-          // Device not previously paired — show manual connect button
-          this.nfcStatus = 'no-match';
+          bleService.connect(name);
         }
       };
       await reader.scan({ signal: this._nfcAbort.signal });
@@ -215,9 +215,8 @@ export class AppConnect extends LitElement {
     const bleSupported = !!navigator.bluetooth;
 
     const nfcLabel =
-      this.nfcStatus === 'scanning'  ? 'Scanning for RFID tag…' :
-      this.nfcStatus === 'found'     ? `Tag found: ${this.scannedName} — connecting…` :
-      this.nfcStatus === 'no-match'  ? `Tag: ${this.scannedName} — tap Connect to pair` :
+      this.nfcStatus === 'scanning' ? 'Scanning for RFID tag…' :
+      this.nfcStatus === 'found'    ? `Tag found: ${this.scannedName} — connecting…` :
       null;
 
     return html`
