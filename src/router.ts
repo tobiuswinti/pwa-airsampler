@@ -80,12 +80,6 @@ const routes: Route[] = [
     load: () => import('./pages/app-admin-runs.js'),
   },
   {
-    hash: '#device-config',
-    title: 'AirSampler — Set Device Name',
-    render: () => html`<app-device-config></app-device-config>`,
-    load: () => import('./pages/app-device-config.js'),
-  },
-  {
     hash: '#device-control',
     title: 'AirSampler — Device Control',
     render: () => html`<app-device-control></app-device-control>`,

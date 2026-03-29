@@ -534,9 +534,12 @@ export class AppAdmin extends LitElement {
       margin-top: 4px;
       display: flex;
       flex-direction: column;
-      align-items: center;
+      align-items: stretch;
       gap: 14px;
     }
+
+    .write-section .nfc-widget { align-self: center; }
+    .write-section .btn { align-self: flex-end; }
 
     .nfc-widget {
       display: flex;

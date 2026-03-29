@@ -306,7 +306,7 @@ export class AppHome extends LitElement {
           ` : ''}
 
           ${this.adminMode ? html`
-            <span class="section-label">Admin</span>
+            <span class="section-label">Setup</span>
 
             <a class="nav-card " href="${resolveRouterPath('admin')}">
               <div class="nav-icon" style="background:rgba(255,255,255,0.06);">
