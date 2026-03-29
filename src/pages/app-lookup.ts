@@ -17,14 +17,6 @@ declare interface NDEFMessage { records: NDEFRecord[]; }
 declare interface NDEFReadingEvent extends Event { serialNumber: string; message: NDEFMessage; }
 
 function tagIdFromNfc(e: NDEFReadingEvent): string {
-  for (const r of e.message?.records ?? []) {
-    if (r.recordType === 'text' && r.data) {
-      const bytes = new Uint8Array(r.data.buffer, r.data.byteOffset, r.data.byteLength);
-      const langLen = bytes[0] & 0x3f;
-      const text = new TextDecoder().decode(bytes.slice(1 + langLen));
-      if (text.trim()) return text.trim().toUpperCase();
-    }
-  }
   return e.serialNumber.toUpperCase();
 }
 
