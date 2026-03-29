@@ -230,29 +230,74 @@ export class AppRun extends LitElement {
         const uploadedAt = d['uploadedAt'] instanceof Timestamp
           ? d['uploadedAt'].toMillis()
           : Number(d['uploadedAt'] ?? 0);
-        const meta       = d['meta'] ?? {};
-        const csvRows: string[] = d['csvRows'] ?? [];
-        const rows = csvRows.map((r: string) => r.split(','));
+
+        let fields: string[];
+        let units: string[];
+        let rows: string[][];
+        let startTimeMs: number;
+        let downloadedAtMs: number;
+        let interval: number;
+        let tagId: string;
+        let deviceName: string;
+        let latStr: string;
+        let lonStr: string;
+        let statesStr: string;
+
+        if ((d['schemaVersion'] ?? 1) >= 2) {
+          // ── v2: columnar format, promoted top-level fields ──────────────
+          const columns = (d['columns'] ?? []) as { name: string; unit: string; data: (number | null)[] }[];
+          const rowCount = d['rowCount'] as number ?? (columns[0]?.data.length ?? 0);
+          fields = columns.map(c => c.name);
+          units  = columns.map(c => c.unit);
+          rows   = [];
+          for (let i = 0; i < rowCount; i++) {
+            rows.push(columns.map(c => (c.data[i] != null ? String(c.data[i]) : '')));
+          }
+          startTimeMs    = d['startTime']    instanceof Timestamp ? d['startTime'].toMillis()    : Number(d['startTime']    ?? 0);
+          downloadedAtMs = d['downloadedAt'] instanceof Timestamp ? d['downloadedAt'].toMillis() : Number(d['downloadedAt'] ?? 0);
+          interval       = Number(d['interval'] ?? 1000);
+          tagId          = d['tagId']      ?? '';
+          deviceName     = d['deviceName'] ?? '';
+          const loc      = d['location'] as { lat: number; lon: number } | null;
+          latStr         = loc ? String(loc.lat) : '';
+          lonStr         = loc ? String(loc.lon) : '';
+          statesStr      = Array.isArray(d['states']) ? (d['states'] as string[]).join(',') : '';
+        } else {
+          // ── v1: legacy nested meta + csvRows ────────────────────────────
+          const meta: Record<string, unknown> = d['meta'] ?? {};
+          const csvRows: string[] = d['csvRows'] ?? [];
+          fields         = d['fields'] ?? [];
+          units          = d['units']  ?? [];
+          rows           = csvRows.map((r: string) => r.split(','));
+          startTimeMs    = Number(meta['startTime'] ?? d['startTime'] ?? 0);
+          downloadedAtMs = Number(d['downloadedAt'] ?? 0);
+          interval       = Number(meta['interval'] ?? 1000);
+          tagId          = String(meta['tagId']      ?? d['tagId']      ?? '');
+          deviceName     = String(meta['deviceName'] ?? d['deviceName'] ?? '');
+          latStr         = String(meta['lat'] ?? '');
+          lonStr         = String(meta['lon'] ?? '');
+          statesStr      = String(meta['states'] ?? '');
+        }
 
         this.run = {
-          id:             Number(d['deviceRunId'] ?? 0),
-          downloadedAt:   Number(d['downloadedAt'] ?? 0),
-          fields:         d['fields']  ?? [],
-          units:          d['units']   ?? [],
+          id:             0,
+          downloadedAt:   downloadedAtMs,
+          fields,
+          units,
           meta: {
-            startTime:  Number(meta['startTime'] ?? d['startTime'] ?? 0),
-            interval:   Number(meta['interval']  ?? 1000),
-            tagId:      meta['tagId']      ?? d['tagId'] ?? '',
-            lat:        meta['lat']        ?? '',
-            lon:        meta['lon']        ?? '',
-            states:     meta['states']     ?? '',
-            deviceName: meta['deviceName'] ?? d['deviceName'] ?? '',
+            startTime:  startTimeMs,
+            interval,
+            tagId,
+            lat:        latStr,
+            lon:        lonStr,
+            states:     statesStr,
+            deviceName,
           },
           rows,
           firebaseId:      docId,
           cloudUploadedAt: uploadedAt,
         };
-        document.title = `AirSampler — ${this.run.meta.tagId || `Run #${this.run.id}`}`;
+        document.title = `AirSampler — ${this.run.meta.tagId || docId}`;
       } catch (err: unknown) {
         this.error = (err as Error)?.message ?? 'Failed to load run from cloud.';
       } finally {
@@ -1133,7 +1178,7 @@ export class AppRun extends LitElement {
     if (this.loading) return html`
       <main>
         <div class="page-header">
-          <a class="back-btn" href="${resolveRouterPath('sync')}">←</a>
+          <a class="back-btn" href="${resolveRouterPath(this.isCloud ? 'lookup' : 'sync')}">←</a>
           <span class="page-title">Loading…</span>
         </div>
         <p class="state-msg">Loading run from cloud…</p>
@@ -1142,7 +1187,7 @@ export class AppRun extends LitElement {
     if (this.error || !this.run) return html`
       <main>
         <div class="page-header">
-          <a class="back-btn" href="${resolveRouterPath('sync')}">←</a>
+          <a class="back-btn" href="${resolveRouterPath(this.isCloud ? 'lookup' : 'sync')}">←</a>
           <span class="page-title">Error</span>
         </div>
         <p class="state-msg">${this.error || 'Run not found.'}</p>
@@ -1203,7 +1248,7 @@ export class AppRun extends LitElement {
     return html`
       <main>
         <div class="page-header">
-          <a class="back-btn" href="${resolveRouterPath('sync')}">←</a>
+          <a class="back-btn" href="${resolveRouterPath(this.isCloud ? 'lookup' : 'sync')}">←</a>
           <span class="page-title">${runName}</span>
           <div class="header-actions">
             <button class="btn-sm" @click=${this._download}>CSV</button>

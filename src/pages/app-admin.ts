@@ -749,7 +749,7 @@ export class AppAdmin extends LitElement {
             <div class="action-row">
               <button class="btn"
                 ?disabled=${dis || this.zeroResult.state === 'running'}
-                @click=${this._servoZero}>
+                @click=${() => this._servoZero()}>
                 ${this.zeroResult.state === 'running' ? 'Calibrating…' : 'Start Calibration'}
               </button>
               ${this.zeroResult.state === 'running' ? html`
