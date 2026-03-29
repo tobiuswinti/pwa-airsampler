@@ -274,9 +274,9 @@ export class AppSample extends LitElement {
     }
 
     .nfc-icon {
-      width: 56px; height: 56px;
+      width: 88px; height: 88px;
       border-radius: 50%;
-      border: 1.5px solid var(--border);
+      border: 2px solid var(--border);
       display: flex;
       align-items: center;
       justify-content: center;
@@ -289,8 +289,8 @@ export class AppSample extends LitElement {
     }
 
     @keyframes nfc-pulse {
-      0%, 100% { box-shadow: 0 0 0 0 rgba(59,130,246,0.35); }
-      50%       { box-shadow: 0 0 0 10px rgba(59,130,246,0); }
+      0%, 100% { box-shadow: 0 0 0 0 rgba(59,130,246,0.45); }
+      50%       { box-shadow: 0 0 0 18px rgba(59,130,246,0); }
     }
 
     .scan-label {
@@ -493,7 +493,7 @@ export class AppSample extends LitElement {
             ${this.nfcAvail ? html`
               <div class="scan-area">
                 <div class="nfc-icon ${this.scanning ? 'scanning' : ''}">
-                  <svg width="32" height="32" viewBox="0 0 24 24" fill="${this.scanning ? '#60a5fa' : '#52525b'}">
+                  <svg width="44" height="44" viewBox="0 0 24 24" fill="${this.scanning ? '#60a5fa' : '#52525b'}">
                     <path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 14H5.17L4 17.17V4h16v12z"/>
                     <path d="M6 15h2v-2H6v2zm0-4h2V9H6v2zm0-4h2V5H6v2zm4 8h2v-2h-2v2zm0-4h2V9h-2v2zm0-4h2V5h-2v2zm4 8h2v-2h-2v2zm0-4h2V9h-2v2zm0-4h2V5h-2v2z"/>
                   </svg>

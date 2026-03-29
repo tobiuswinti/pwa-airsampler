@@ -106,7 +106,7 @@ export class AppControl extends LitElement {
     this.nfcAbort = new AbortController();
     try {
       const reader = new (window as any).NDEFReader();
-      reader.addEventListener('reading', ({ message, serialNumber }: any) => {
+      reader.addEventListener('reading', ({ serialNumber }: any) => {
         if (serialNumber) this.tagId = serialNumber.toUpperCase();
         this._stopNfc();
       });
@@ -307,43 +307,44 @@ export class AppControl extends LitElement {
 
     .input-row .input { flex: 1; min-width: 0; }
 
-    /* ── NFC button ── */
-    .nfc-btn {
-      font-family: var(--sans);
-      font-size: 0.8125rem;
-      font-weight: 500;
-      padding: 10px 14px;
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      background: transparent;
-      color: var(--muted-fg);
-      cursor: pointer;
-      white-space: nowrap;
-      flex-shrink: 0;
+    /* ── NFC widget ── */
+    .nfc-widget {
       display: flex;
+      flex-direction: column;
       align-items: center;
-      gap: 6px;
-      transition: border-color 0.15s, color 0.15s;
+      gap: 12px;
+      padding: 16px 0 4px;
     }
 
-    .nfc-btn:hover:not(:disabled) { border-color: #52525b; color: var(--fg); }
-    .nfc-btn:disabled { opacity: 0.3; cursor: not-allowed; }
-    .nfc-btn.scanning { color: #f59e0b; border-color: rgba(245,158,11,0.4); background: rgba(245,158,11,0.05); }
-
-    .nfc-hint {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      font-size: 0.75rem;
-      color: #f59e0b;
-    }
-
-    .nfc-hint-dot {
-      width: 5px; height: 5px;
+    .nfc-ring {
+      width: 80px; height: 80px;
       border-radius: 50%;
-      background: #f59e0b;
-      animation: pulse 0.5s infinite;
+      border: 2px solid var(--border);
+      background: #0d0d0f;
+      display: flex; align-items: center; justify-content: center;
+      cursor: pointer;
+      transition: border-color 0.2s;
     }
+
+    .nfc-ring:disabled { opacity: 0.3; cursor: not-allowed; pointer-events: none; }
+
+    .nfc-ring.scanning {
+      border-color: #3b82f6;
+      animation: nfc-pulse 1.5s ease-in-out infinite;
+    }
+
+    @keyframes nfc-pulse {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(59,130,246,0.45); }
+      50%       { box-shadow: 0 0 0 18px rgba(59,130,246,0); }
+    }
+
+    .nfc-label {
+      font-family: var(--mono);
+      font-size: 0.72rem;
+      color: var(--muted-fg);
+    }
+
+    .nfc-label.active { color: #60a5fa; }
 
     .err-text {
       font-family: var(--mono);
@@ -536,26 +537,6 @@ export class AppControl extends LitElement {
 
     .btn-stop:hover { background: rgba(239,68,68,0.12); }
 
-    /* ── NFC tooltip ── */
-    .tooltip-wrap { position: relative; display: inline-block; }
-    .tooltip-wrap:hover .tooltip { opacity: 1; }
-    .tooltip {
-      position: absolute;
-      bottom: calc(100% + 6px);
-      left: 50%;
-      transform: translateX(-50%);
-      background: #18181b;
-      border: 1px solid var(--border);
-      border-radius: 5px;
-      padding: 4px 8px;
-      font-size: 0.65rem;
-      color: var(--muted-fg);
-      white-space: nowrap;
-      opacity: 0;
-      transition: opacity 0.12s;
-      pointer-events: none;
-      z-index: 10;
-    }
   `;
 
   render() {
@@ -599,20 +580,20 @@ export class AppControl extends LitElement {
                   .value=${this.tagId}
                   @input=${(e: Event) => { this.tagId = (e.target as HTMLInputElement).value; }}
                   ?disabled=${!this.connected} />
-                <span class="${!this.nfcAvailable ? 'tooltip-wrap' : ''}">
-                  <button class="nfc-btn ${this.nfcScanning ? 'scanning' : ''}"
-                    ?disabled=${!this.connected || !this.nfcAvailable}
-                    @click=${this.nfcScanning ? this._stopNfc : this._scanNfc}>
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
-                      <path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z"/>
-                    </svg>
-                    ${this.nfcScanning ? 'Cancel' : 'NFC'}
-                  </button>
-                  ${!this.nfcAvailable ? html`<span class="tooltip">Requires Chrome on Android</span>` : ''}
-                </span>
               </div>
-              ${this.nfcScanning ? html`
-                <div class="nfc-hint"><span class="nfc-hint-dot"></span>Hold tag near phone…</div>
+              ${this.nfcAvailable ? html`
+                <div class="nfc-widget">
+                  <div class="nfc-ring ${this.nfcScanning ? 'scanning' : ''} ${!this.connected ? 'disabled' : ''}"
+                    @click=${!this.connected ? undefined : this.nfcScanning ? this._stopNfc : this._scanNfc}>
+                    <svg width="38" height="38" viewBox="0 0 24 24" fill="${this.nfcScanning ? '#60a5fa' : '#52525b'}">
+                      <path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 14H5.17L4 17.17V4h16v12z"/>
+                      <path d="M6 15h2v-2H6v2zm0-4h2V9H6v2zm0-4h2V5H6v2zm4 8h2v-2h-2v2zm0-4h2V9h-2v2zm0-4h2V5h-2v2zm4 8h2v-2h-2v2zm0-4h2V9h-2v2zm0-4h2V5h-2v2z"/>
+                    </svg>
+                  </div>
+                  <span class="nfc-label ${this.nfcScanning ? 'active' : ''}">
+                    ${this.nfcScanning ? 'Hold tag near phone…' : 'Tap to scan NFC tag'}
+                  </span>
+                </div>
               ` : ''}
               ${this.nfcError ? html`<div class="err-text">${this.nfcError}</div>` : ''}
             </div>

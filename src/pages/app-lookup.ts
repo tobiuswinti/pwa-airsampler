@@ -53,6 +53,7 @@ export class AppLookup extends LitElement {
       this.allRuns = getDeviceRuns();
       if (this.searched) this._applyLocalFilter(this.tagId);
     });
+    if (this.nfcAvail) this._startScan();
   }
 
   disconnectedCallback() {
@@ -235,36 +236,58 @@ export class AppLookup extends LitElement {
     .tag-input:focus { border-color: #72727a; }
     .tag-input::placeholder { color: #52525b; }
 
-    .btn-nfc {
+    .btn-icon {
       display: flex; align-items: center; justify-content: center;
-      width: 38px; height: 38px;
+      width: 36px; height: 36px;
       border-radius: 6px;
       border: 1px solid var(--border);
       background: transparent;
       color: var(--muted-fg);
       cursor: pointer;
       flex-shrink: 0;
+      font-size: 0.9rem;
       transition: border-color 0.15s, color 0.15s;
     }
 
-    .btn-nfc:hover:not(:disabled) { border-color: #72727a; color: var(--fg); }
-    .btn-nfc.nfc-unavail { opacity: 0.35; cursor: not-allowed; }
-    .btn-nfc.scanning {
-      border-color: #3b82f6; color: #60a5fa;
+    .btn-icon:hover { border-color: #72727a; color: var(--fg); }
+    .btn-icon.scanning { border-color: #3b82f6; color: #60a5fa; }
+
+    /* ── NFC widget ── */
+    .nfc-widget {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 14px;
+      padding: 24px 0 8px;
+    }
+
+    .nfc-ring {
+      width: 88px; height: 88px;
+      border-radius: 50%;
+      border: 2px solid #3f3f46;
+      background: #111113;
+      display: flex; align-items: center; justify-content: center;
+      transition: border-color 0.3s;
+      cursor: pointer;
+    }
+
+    .nfc-ring.scanning {
+      border-color: #3b82f6;
       animation: nfc-pulse 1.5s ease-in-out infinite;
     }
 
     @keyframes nfc-pulse {
-      0%, 100% { box-shadow: 0 0 0 0 rgba(59,130,246,0.3); }
-      50%       { box-shadow: 0 0 0 6px rgba(59,130,246,0); }
+      0%, 100% { box-shadow: 0 0 0 0 rgba(59,130,246,0.45); }
+      50%       { box-shadow: 0 0 0 18px rgba(59,130,246,0); }
     }
 
-    .scan-hint {
+    .nfc-ring-label {
       font-family: var(--mono);
-      font-size: 0.72rem;
-      color: #60a5fa;
-      margin-top: 8px;
+      font-size: 0.75rem;
+      color: var(--muted-fg);
     }
+
+    .nfc-ring-label.active { color: #60a5fa; }
 
     /* ── Results sections ── */
     .section-header {
@@ -410,25 +433,33 @@ export class AppLookup extends LitElement {
                 @input=${this._onInput}
               />
               ${this.tagId ? html`
-                <button class="btn-nfc" title="Clear" @click=${this._clear}>
+                <button class="btn-icon" title="Clear" @click=${this._clear}>✕</button>
+              ` : this.nfcAvail ? html`
+                <button class="btn-icon ${this.scanning ? 'scanning' : ''}"
+                  title="${this.scanning ? 'Stop scanning' : 'Scan NFC tag'}"
+                  @click=${this.scanning ? this._stopScan : this._startScan}>
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-                    <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
-                  </svg>
-                </button>
-              ` : html`
-                <button
-                  class="btn-nfc ${this.scanning ? 'scanning' : ''} ${!this.nfcAvail ? 'nfc-unavail' : ''}"
-                  title="${!this.nfcAvail ? 'NFC not available (requires Android Chrome)' : this.scanning ? 'Stop scanning' : 'Scan NFC tag'}"
-                  ?disabled=${!this.nfcAvail}
-                  @click=${this.nfcAvail ? (this.scanning ? this._stopScan : this._startScan) : undefined}>
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
                     <path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 14H5.17L4 17.17V4h16v12z"/>
                     <path d="M6 15h2v-2H6v2zm0-4h2V9H6v2zm0-4h2V5H6v2zm4 8h2v-2h-2v2zm0-4h2V9h-2v2zm0-4h2V5h-2v2zm4 8h2v-2h-2v2zm0-4h2V9h-2v2zm0-4h2V5h-2v2z"/>
                   </svg>
                 </button>
-              `}
+              ` : ''}
             </div>
-            ${this.scanning ? html`<p class="scan-hint">Hold NFC tag close to scan…</p>` : ''}
+
+            ${!this.tagId && this.nfcAvail ? html`
+              <div class="nfc-widget">
+                <div class="nfc-ring ${this.scanning ? 'scanning' : ''}"
+                  @click=${this.scanning ? this._stopScan : this._startScan}>
+                  <svg width="40" height="40" viewBox="0 0 24 24" fill="${this.scanning ? '#60a5fa' : '#52525b'}">
+                    <path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 14H5.17L4 17.17V4h16v12z"/>
+                    <path d="M6 15h2v-2H6v2zm0-4h2V9H6v2zm0-4h2V5H6v2zm4 8h2v-2h-2v2zm0-4h2V9h-2v2zm0-4h2V5h-2v2zm4 8h2v-2h-2v2zm0-4h2V9h-2v2zm0-4h2V5h-2v2z"/>
+                  </svg>
+                </div>
+                <span class="nfc-ring-label ${this.scanning ? 'active' : ''}">
+                  ${this.scanning ? 'Hold tag near phone…' : 'Tap to scan NFC tag'}
+                </span>
+              </div>
+            ` : ''}
           </div>
 
           ${!this.searched && !this.searching ? html`
