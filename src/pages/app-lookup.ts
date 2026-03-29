@@ -26,6 +26,7 @@ interface CloudDoc {
   tagId: string;
   startTime: number;
   uploadedAt: number;
+  deviceName: string;
 }
 
 const COLLECTION = 'device_runs';
@@ -134,14 +135,19 @@ export class AppLookup extends LitElement {
     const rawStart = Number(d['startTime'] ?? 0);
     return {
       firebaseDocId: id,
-      tagId:     String(d['tagId'] ?? ''),
-      startTime: rawStart < 1e12 ? rawStart * 1000 : rawStart,
+      tagId:      String(d['tagId']      ?? ''),
+      deviceName: String(d['deviceName'] ?? ''),
+      startTime:  rawStart < 1e12 ? rawStart * 1000 : rawStart,
       uploadedAt,
     };
   }
 
   private _fmtDate(ms: number) {
-    return ms ? new Date(ms).toLocaleDateString() : '—';
+    if (!ms) return '—';
+    return new Date(ms).toLocaleString([], {
+      year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', second: '2-digit',
+    });
   }
 
   // ── Styles ────────────────────────────────────────────────────────────
@@ -319,22 +325,17 @@ export class AppLookup extends LitElement {
     }
 
     /* ── Run rows ── */
-    .run-item {
+    .run-row {
       display: flex;
       align-items: center;
       gap: 10px;
-      padding: 10px 12px;
-      border: 1px solid var(--border);
-      border-radius: 6px;
-      text-decoration: none;
-      color: var(--fg);
-      transition: background 0.12s, border-color 0.12s;
+      padding: 10px 0;
+      border-bottom: 1px solid #27272a;
     }
 
-    .run-item + .run-item { margin-top: 6px; }
-    .run-item:hover { background: #18181b; border-color: #72727a; }
+    .run-row:last-child { border-bottom: none; }
 
-    .run-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+    .run-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
 
     .run-name {
       font-size: 0.8125rem;
@@ -342,6 +343,19 @@ export class AppLookup extends LitElement {
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
+    }
+
+    .run-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      align-items: center;
+    }
+
+    .run-device {
+      font-family: var(--mono);
+      font-size: 0.65rem;
+      color: #60a5fa;
     }
 
     .run-date { font-family: var(--mono); font-size: 0.65rem; color: var(--muted-fg); }
@@ -357,20 +371,6 @@ export class AppLookup extends LitElement {
     .run-badge.cloud  { color: #22c55e; background: rgba(34,197,94,0.08); border: 1px solid rgba(34,197,94,0.2); }
     .run-badge.local  { color: #f59e0b; background: rgba(245,158,11,0.08); border: 1px solid rgba(245,158,11,0.2); }
     .run-badge.error  { color: #f87171; background: rgba(239,68,68,0.08);  border: 1px solid rgba(239,68,68,0.2); }
-
-    .run-arrow { font-size: 0.85rem; color: var(--muted-fg); flex-shrink: 0; transition: transform 0.15s; }
-    .run-item:hover .run-arrow { transform: translateX(2px); }
-
-    /* ── Cloud row ── */
-    .cloud-row {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      padding: 10px 0;
-      border-bottom: 1px solid #27272a;
-    }
-
-    .cloud-row:last-child { border-bottom: none; }
 
     .btn-sm {
       font-family: var(--sans);
@@ -482,14 +482,17 @@ export class AppLookup extends LitElement {
                     const badgeLabel = run.firebaseId ? 'in cloud'
                       : run.uploadError ? 'upload error' : 'pending upload';
                     return html`
-                      <a class="run-item" href="#run/${run.id}">
+                      <div class="run-row">
                         <div class="run-info">
                           <span class="run-name">${run.meta?.tagId || `Run #${run.id}`}</span>
-                          <span class="run-date">${this._fmtDate(run.meta.startTime)}</span>
+                          <div class="run-meta">
+                            ${run.meta?.deviceName ? html`<span class="run-device">${run.meta.deviceName}</span>` : ''}
+                            <span class="run-date">${this._fmtDate(run.meta.startTime)}</span>
+                          </div>
                         </div>
                         <span class="run-badge ${badge}">${badgeLabel}</span>
-                        <span class="run-arrow">›</span>
-                      </a>`;
+                        <a class="btn-sm" href="#run/${run.id}">View</a>
+                      </div>`;
                   })
               }
             </div>
@@ -502,15 +505,18 @@ export class AppLookup extends LitElement {
               </div>
               ${this.cloudResults.length === 0
                 ? html`<div class="empty-msg">No cloud run with tag "${tag}".</div>`
-                : html`<div class="cloud-list">${this.cloudResults.map(d => html`
-                    <div class="cloud-row">
+                : this.cloudResults.map(d => html`
+                    <div class="run-row">
                       <div class="run-info">
                         <span class="run-name">${d.tagId || d.firebaseDocId.slice(0, 8)}</span>
-                        <span class="run-date">${this._fmtDate(d.startTime)}</span>
+                        <div class="run-meta">
+                          ${d.deviceName ? html`<span class="run-device">${d.deviceName}</span>` : ''}
+                          <span class="run-date">${this._fmtDate(d.startTime)}</span>
+                        </div>
                       </div>
                       <a class="btn-sm" href="#cloud-run/${d.firebaseDocId}">View</a>
                     </div>
-                  `)}</div>`
+                  `)
               }
             </div>
 

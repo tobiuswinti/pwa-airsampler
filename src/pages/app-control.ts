@@ -38,9 +38,10 @@ export class AppControl extends LitElement {
   connectedCallback() {
     super.connectedCallback();
     bleService.addEventListener('status-changed', this._onStatus);
-    if ('NDEFReader' in window) this.nfcAvailable = true;
+    if ('NDEFReader' in window) { this.nfcAvailable = true; this._scanNfc(); }
     const last = getLastRfidTag();
     if (last) this.tagId = last;
+    this._getGps();
   }
 
   disconnectedCallback() {
@@ -352,6 +353,20 @@ export class AppControl extends LitElement {
       color: #f87171;
     }
 
+    /* ── Map ── */
+    .map-wrap {
+      border-radius: 8px;
+      overflow: hidden;
+      border: 1px solid var(--border);
+    }
+
+    .map-frame {
+      width: 100%;
+      height: 200px;
+      display: block;
+      border: none;
+    }
+
     /* ── GPS button ── */
     .gps-btn {
       font-family: var(--sans);
@@ -617,11 +632,18 @@ export class AppControl extends LitElement {
                   @input=${(e: Event) => { this.lon = (e.target as HTMLInputElement).value; }}
                   ?disabled=${!this.connected} />
                 <button class="gps-btn"
-                  ?disabled=${!this.connected || this.gpsLoading}
+                  ?disabled=${this.gpsLoading}
                   @click=${this._getGps}>
                   ${this.gpsLoading ? '…' : 'GPS'}
                 </button>
               </div>
+              ${this.lat && this.lon ? html`
+                <div class="map-wrap">
+                  <iframe class="map-frame"
+                    src="https://www.openstreetmap.org/export/embed.html?bbox=${(Number(this.lon)-0.005).toFixed(6)},${(Number(this.lat)-0.005).toFixed(6)},${(Number(this.lon)+0.005).toFixed(6)},${(Number(this.lat)+0.005).toFixed(6)}&layer=mapnik&marker=${this.lat},${this.lon}">
+                  </iframe>
+                </div>
+              ` : ''}
             </div>
           </div>
 
