@@ -25,7 +25,7 @@ function tagIdFromNfc(e: NDEFReadingEvent): string {
       if (text.trim()) return text.trim().toUpperCase();
     }
   }
-  return e.serialNumber.replace(/[:\-]/g, '').toUpperCase();
+  return e.serialNumber.toUpperCase();
 }
 
 // ── Types ──────────────────────────────────────────────────────────────────
