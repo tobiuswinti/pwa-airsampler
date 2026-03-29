@@ -14,8 +14,9 @@ export async function uploadRun(run: DeviceRun): Promise<string> {
 
   const docRef = await addDoc(collection(db, COLLECTION), {
     deviceRunId:  run.id,
-    runId:        run.meta.runId   || null,
-    tagId:        run.meta.tagId   || null,
+    runId:        run.meta.runId      || null,
+    tagId:        run.meta.tagId      || null,
+    deviceName:   run.meta.deviceName || null,
     startTime:    run.meta.startTime,
     downloadedAt: run.downloadedAt,
     uploadedAt:   Timestamp.now(),

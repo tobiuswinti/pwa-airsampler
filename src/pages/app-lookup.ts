@@ -159,10 +159,11 @@ export class AppLookup extends LitElement {
     const uploadedAt = d['uploadedAt'] instanceof Timestamp
       ? d['uploadedAt'].toMillis() : Number(d['uploadedAt'] ?? 0);
     const rawStart = Number(d['startTime'] ?? 0);
+    const meta = d['meta'] as Record<string, unknown> | undefined;
     return {
       firebaseDocId: id,
-      tagId:      String(d['tagId']      ?? ''),
-      deviceName: String(d['deviceName'] ?? ''),
+      tagId:      String(d['tagId']                           ?? ''),
+      deviceName: String(meta?.['deviceName'] ?? d['deviceName'] ?? ''),
       startTime:  rawStart < 1e12 ? rawStart * 1000 : rawStart,
       uploadedAt,
     };
