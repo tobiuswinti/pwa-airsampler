@@ -107,15 +107,7 @@ export class AppControl extends LitElement {
     try {
       const reader = new (window as any).NDEFReader();
       reader.addEventListener('reading', ({ message, serialNumber }: any) => {
-        let id = '';
-        for (const record of message.records) {
-          if (record.recordType === 'text') {
-            id = new TextDecoder(record.encoding ?? 'utf-8').decode(record.data);
-            break;
-          }
-        }
-        if (!id && serialNumber) id = serialNumber;
-        if (id) this.tagId = id.toUpperCase();
+        if (serialNumber) this.tagId = serialNumber.toUpperCase();
         this._stopNfc();
       });
       reader.addEventListener('readingerror', () => {

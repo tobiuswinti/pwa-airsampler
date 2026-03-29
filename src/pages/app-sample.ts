@@ -105,14 +105,7 @@ export class AppSample extends LitElement {
         this._nfcAbort?.abort();
         this._nfcAbort = null;
         this.scanning  = false;
-        let id = '';
-        for (const record of e.message.records) {
-          if (record.recordType === 'text') {
-            id = new TextDecoder(record.encoding ?? 'utf-8').decode(record.data);
-            break;
-          }
-        }
-        if (!id && e.serialNumber) id = e.serialNumber;
+        const id = e.serialNumber ?? '';
         this._search(id.toUpperCase());
       };
       await reader.scan({ signal: this._nfcAbort.signal });
