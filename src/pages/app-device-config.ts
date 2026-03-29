@@ -3,7 +3,7 @@ import { state, customElement } from 'lit/decorators.js';
 import { resolveRouterPath } from '../router';
 import { bleService } from '../ble-service';
 
-type WriteStatus = 'idle' | 'running' | 'ok' | 'error';
+type WriteStatus = 'idle' | 'nfc' | 'nfc-done' | 'ble' | 'ok' | 'error';
 
 @customElement('app-device-config')
 export class AppDeviceConfig extends LitElement {
@@ -11,11 +11,8 @@ export class AppDeviceConfig extends LitElement {
   @state() private deviceName = '';
   @state() private connected  = bleService.connStatus === 'connected';
 
-  @state() private nfcStatus: WriteStatus = 'idle';
-  @state() private nfcMsg = '';
-
-  @state() private bleStatus: WriteStatus = 'idle';
-  @state() private bleMsg = '';
+  @state() private status: WriteStatus = 'idle';
+  @state() private msg = '';
 
   private _onStatus = () => { this.connected = bleService.connStatus === 'connected'; };
 
@@ -35,43 +32,47 @@ export class AppDeviceConfig extends LitElement {
     const bytes = crypto.getRandomValues(new Uint8Array(4));
     const hex   = Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('').toUpperCase();
     this.deviceName = `AirSampler-${hex}`;
-    this.nfcStatus  = 'idle';
-    this.bleStatus  = 'idle';
+    this.status = 'idle';
+    this.msg    = '';
   }
 
-  private async _writeToRfid() {
+  private async _write() {
     const name = this.deviceName.trim();
     if (!name) return;
+
     if (!('NDEFReader' in window)) {
-      this.nfcStatus = 'error';
-      this.nfcMsg    = 'NFC not available on this device';
+      this.status = 'error';
+      this.msg    = 'NFC not available on this device';
       return;
     }
+
+    // Step 1: write to RFID tag
+    this.status = 'nfc';
+    this.msg    = '';
     try {
-      this.nfcStatus = 'running';
-      this.nfcMsg    = '';
       const writer = new (window as any).NDEFReader();
       await writer.write({ records: [{ recordType: 'text', data: name }] });
-      this.nfcStatus = 'ok';
-      this.nfcMsg    = 'Written to tag';
+      this.status = 'nfc-done';
     } catch (e: any) {
-      this.nfcStatus = 'error';
-      this.nfcMsg    = e?.message ?? 'Write failed';
+      this.status = 'error';
+      this.msg    = e?.message ?? 'NFC write failed';
+      return;
     }
-  }
 
-  private async _writeToDevice() {
-    const name = this.deviceName.trim();
-    if (!name || !this.connected) return;
-    this.bleStatus = 'running';
-    this.bleMsg    = '';
-    const lines = await bleService.sendCmd(`setBLEName -name ${name}`);
-    if (lines.some(l => l.startsWith('OK'))) {
-      this.bleStatus = 'ok';
-      this.bleMsg    = 'Name updated — reconnect to apply';
+    // Step 2: write to BLE device automatically
+    if (this.connected) {
+      this.status = 'ble';
+      const lines = await bleService.sendCmd(`setBLEName -name ${name}`);
+      if (lines.some(l => l.startsWith('OK'))) {
+        this.status = 'ok';
+        this.msg    = 'Name updated — reconnect to apply';
+      } else {
+        this.status = 'error';
+        this.msg    = lines.find(l => l.startsWith('ERROR')) ?? 'Unknown error';
+      }
     } else {
-      this.bleStatus = 'error';
-      this.bleMsg    = lines.find(l => l.startsWith('ERROR')) ?? 'Unknown error';
+      this.status = 'ok';
+      this.msg    = 'Written to tag — connect device to update BLE name';
     }
   }
 
@@ -223,26 +224,88 @@ export class AppDeviceConfig extends LitElement {
     }
     .btn-generate:hover:not(:disabled) { background: rgba(99,102,241,0.12); border-color: #6366f1; }
 
-    /* ── Action rows ── */
-    .action-row {
+    /* ── Write section ── */
+    .write-section {
+      margin-top: 16px;
+      padding-top: 16px;
+      border-top: 1px solid #27272a;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 16px;
+    }
+
+    /* ── NFC ring ── */
+    .nfc-widget {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .nfc-ring {
+      width: 88px; height: 88px;
+      border-radius: 50%;
+      border: 2px solid #3f3f46;
+      background: #111113;
+      display: flex; align-items: center; justify-content: center;
+      transition: border-color 0.3s;
+    }
+
+    .nfc-ring.scanning {
+      border-color: #3b82f6;
+      animation: nfc-pulse 1.5s ease-in-out infinite;
+    }
+
+    .nfc-ring.done { border-color: #22c55e; }
+    .nfc-ring.error { border-color: #ef4444; }
+
+    @keyframes nfc-pulse {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(59,130,246,0.45); }
+      50%       { box-shadow: 0 0 0 18px rgba(59,130,246,0); }
+    }
+
+    .nfc-label {
+      font-family: var(--mono);
+      font-size: 0.75rem;
+      color: var(--muted-fg);
+      text-align: center;
+    }
+
+    .nfc-label.scanning { color: #60a5fa; }
+    .nfc-label.done     { color: #22c55e; }
+    .nfc-label.error    { color: #f87171; }
+
+    /* ── Step list ── */
+    .steps {
+      width: 100%;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .step {
       display: flex;
       align-items: center;
       gap: 8px;
-      flex-wrap: wrap;
-      margin-top: 12px;
-      padding-top: 12px;
-      border-top: 1px solid #27272a;
+      font-size: 0.78rem;
+      font-family: var(--mono);
+      color: var(--muted-fg);
     }
 
-    .action-label {
-      font-size: 0.72rem;
-      font-weight: 500;
-      letter-spacing: 0.04em;
-      text-transform: uppercase;
-      color: var(--muted-fg);
-      width: 100%;
-      margin-bottom: 2px;
+    .step-dot {
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      background: #3f3f46;
+      flex-shrink: 0;
     }
+
+    .step.active   .step-dot { background: #60a5fa; }
+    .step.done     .step-dot { background: #22c55e; }
+    .step.error    .step-dot { background: #f87171; }
+    .step.active              { color: #93c5fd; }
+    .step.done                { color: #4ade80; }
+    .step.error               { color: #f87171; }
 
     /* ── Badges ── */
     .badge {
@@ -254,31 +317,46 @@ export class AppDeviceConfig extends LitElement {
     }
 
     .badge.ok      { color: #22c55e; background: rgba(34,197,94,0.08); }
-    .badge.error   { color: #f87171; background: rgba(239,68,68,0.08); max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .badge.error   { color: #f87171; background: rgba(239,68,68,0.08); }
     .badge.running { color: #a1a1aa; animation: blink 0.7s infinite; }
 
     @keyframes blink { 50% { opacity: 0.3; } }
-
-    /* ── Hint ── */
-    .hint {
-      font-family: var(--mono);
-      font-size: 0.72rem;
-      color: #52525b;
-      margin-top: 4px;
-    }
   `;
 
   // ── Render ────────────────────────────────────────────────────────────────
 
-  private _badge(status: WriteStatus, msg: string) {
-    if (status === 'idle')    return '';
-    if (status === 'running') return html`<span class="badge running">…</span>`;
-    if (status === 'ok')      return html`<span class="badge ok">${msg}</span>`;
-    return html`<span class="badge error">${msg}</span>`;
-  }
-
   render() {
-    const noName = !this.deviceName.trim();
+    const noName  = !this.deviceName.trim();
+    const busy    = this.status === 'nfc' || this.status === 'nfc-done' || this.status === 'ble';
+
+    const nfcRingClass = this.status === 'nfc'      ? 'scanning'
+                       : this.status === 'nfc-done' || this.status === 'ble' || this.status === 'ok' ? 'done'
+                       : this.status === 'error'    ? 'error'
+                       : '';
+
+    const nfcIconColor = nfcRingClass === 'done'     ? '#22c55e'
+                       : nfcRingClass === 'error'    ? '#f87171'
+                       : nfcRingClass === 'scanning' ? '#60a5fa'
+                       : '#52525b';
+
+    const nfcLabelClass = nfcRingClass;
+    const nfcLabelText  = this.status === 'nfc'      ? 'Hold RFID tag to phone…'
+                        : this.status === 'nfc-done' ? 'Tag written'
+                        : this.status === 'ble'      ? 'Sending to device…'
+                        : this.status === 'ok'       ? 'Done'
+                        : this.status === 'error'    ? this.msg
+                        : 'Hold RFID tag to phone when ready';
+
+    const nfcStep1Class = this.status === 'nfc'                    ? 'active'
+                        : ['nfc-done','ble','ok'].includes(this.status) ? 'done'
+                        : this.status === 'error' && !['ble','ok'].includes(this.status) ? 'error'
+                        : '';
+    const nfcStep2Class = this.status === 'ble'    ? 'active'
+                        : this.status === 'ok'     ? 'done'
+                        : this.status === 'error' && (this.status as string) === 'error' ? ''
+                        : '';
+
+    const showWidget = this.status !== 'idle';
 
     return html`
       <main>
@@ -296,7 +374,7 @@ export class AppDeviceConfig extends LitElement {
                   <path d="M1 9l2 2c4.97-4.97 13.03-4.97 18 0l2-2C16.93 2.93 7.08 2.93 1 9zm8 8l3 3 3-3a4.237 4.237 0 00-6 0zm-4-4l2 2a7.074 7.074 0 0110 0l2-2C15.14 9.14 8.87 9.14 5 13z"/>
                 </svg>
               </div>
-              <span class="cb-label">Connect to device to write name to it</span>
+              <span class="cb-label">Connect to device to also update BLE name</span>
               <span class="cb-arrow">›</span>
             </a>
           ` : ''}
@@ -312,38 +390,49 @@ export class AppDeviceConfig extends LitElement {
                 .value=${this.deviceName}
                 @input=${(e: Event) => {
                   this.deviceName = (e.target as HTMLInputElement).value;
-                  this.nfcStatus  = 'idle';
-                  this.bleStatus  = 'idle';
+                  this.status = 'idle';
+                  this.msg    = '';
                 }}
               />
               <button class="btn btn-generate" @click=${this._generate}>Generate</button>
             </div>
 
-            <!-- Write to RFID tag -->
-            <div class="action-row">
-              <span class="action-label">Write to RFID tag</span>
-              <button class="btn"
-                ?disabled=${noName || this.nfcStatus === 'running'}
-                @click=${this._writeToRfid}>
-                ${this.nfcStatus === 'running' ? 'Hold tag…' : 'Write to Tag'}
-              </button>
-              ${this._badge(this.nfcStatus, this.nfcMsg)}
-              ${this.nfcStatus === 'running' ? html`
-                <span class="hint">Hold an NFC tag close to the device</span>
+            <div class="write-section">
+
+              ${showWidget ? html`
+                <div class="nfc-widget">
+                  <div class="nfc-ring ${nfcRingClass}">
+                    <svg width="40" height="40" viewBox="0 0 24 24" fill="${nfcIconColor}">
+                      <path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 14H5.17L4 17.17V4h16v12z"/>
+                      <path d="M6 15h2v-2H6v2zm0-4h2V9H6v2zm0-4h2V5H6v2zm4 8h2v-2h-2v2zm0-4h2V9h-2v2zm0-4h2V5h-2v2zm4 8h2v-2h-2v2zm0-4h2V9h-2v2zm0-4h2V5h-2v2z"/>
+                    </svg>
+                  </div>
+                  <span class="nfc-label ${nfcLabelClass}">${nfcLabelText}</span>
+                </div>
+
+                <div class="steps">
+                  <div class="step ${nfcStep1Class}">
+                    <div class="step-dot"></div>
+                    Write name to RFID tag
+                  </div>
+                  <div class="step ${nfcStep2Class}">
+                    <div class="step-dot"></div>
+                    Send BLE name to device
+                    ${!this.connected ? html` <span style="color:#52525b">(skipped — not connected)</span>` : ''}
+                  </div>
+                </div>
               ` : ''}
-            </div>
 
-            <!-- Write to BLE device -->
-            <div class="action-row">
-              <span class="action-label">Write to device via BLE</span>
               <button class="btn"
-                ?disabled=${noName || !this.connected || this.bleStatus === 'running'}
-                @click=${this._writeToDevice}>
-                ${this.bleStatus === 'running' ? 'Sending…' : 'Write to Device'}
+                ?disabled=${noName || busy}
+                @click=${this._write}>
+                ${this.status === 'nfc'  ? 'Hold tag to phone…'
+                : this.status === 'ble'  ? 'Sending to device…'
+                : this.status === 'ok'   ? 'Write Again'
+                : 'Write'}
               </button>
-              ${this._badge(this.bleStatus, this.bleMsg)}
-            </div>
 
+            </div>
           </div>
 
         </div>

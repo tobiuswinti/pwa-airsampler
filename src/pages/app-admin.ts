@@ -18,11 +18,9 @@ export class AppAdmin extends LitElement {
   @state() private connected = bleService.connStatus === 'connected';
 
   // ── Device Name ───────────────────────────────────────────────────────
-  @state() private deviceSuffix   = '';  // the part after "AirSampler-"
-  @state() private nfcStatus: ActionState = 'idle';
-  @state() private nfcMsg         = '';
-  @state() private bleNameStatus: ActionState = 'idle';
-  @state() private bleNameMsg     = '';
+  @state() private deviceSuffix = '';  // the part after "AirSampler-"
+  @state() private writeStatus: 'idle' | 'nfc' | 'nfc-done' | 'ble' | 'ok' | 'error' = 'idle';
+  @state() private writeMsg = '';
 
   // ── Servo zero ────────────────────────────────────────────────────────
   @state() private zeroResult      = idle();
@@ -85,44 +83,48 @@ export class AppAdmin extends LitElement {
 
   private _generateName() {
     const bytes = crypto.getRandomValues(new Uint8Array(4));
-    this.deviceSuffix  = Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('').toUpperCase();
-    this.nfcStatus     = 'idle';
-    this.bleNameStatus = 'idle';
+    this.deviceSuffix = Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('').toUpperCase();
+    this.writeStatus  = 'idle';
+    this.writeMsg     = '';
   }
 
-  private async _writeNameToRfid() {
+  private async _writeName() {
     const name = this.deviceSuffix.trim() ? this._fullName : '';
     if (!name) return;
+
     if (!('NDEFReader' in window)) {
-      this.nfcStatus = 'error';
-      this.nfcMsg    = 'NFC not available on this device';
+      this.writeStatus = 'error';
+      this.writeMsg    = 'NFC not available on this device';
       return;
     }
+
+    // Step 1: write to RFID tag
+    this.writeStatus = 'nfc';
+    this.writeMsg    = '';
     try {
-      this.nfcStatus = 'running';
-      this.nfcMsg    = '';
       const writer = new (window as any).NDEFReader();
       await writer.write({ records: [{ recordType: 'text', data: name }] });
-      this.nfcStatus = 'ok';
-      this.nfcMsg    = 'Written to tag';
+      this.writeStatus = 'nfc-done';
     } catch (e: any) {
-      this.nfcStatus = 'error';
-      this.nfcMsg    = e?.message ?? 'Write failed';
+      this.writeStatus = 'error';
+      this.writeMsg    = e?.message ?? 'NFC write failed';
+      return;
     }
-  }
 
-  private async _writeNameToDevice() {
-    const name = this.deviceSuffix.trim() ? this._fullName : '';
-    if (!name || !this.connected) return;
-    this.bleNameStatus = 'running';
-    this.bleNameMsg    = '';
-    const lines = await bleService.sendCmd(`setBLEName -name ${name}`);
-    if (lines.some(l => l.startsWith('OK'))) {
-      this.bleNameStatus = 'ok';
-      this.bleNameMsg    = 'Name updated — reconnect to apply';
+    // Step 2: write to BLE device automatically
+    if (this.connected) {
+      this.writeStatus = 'ble';
+      const lines = await bleService.sendCmd(`setBLEName -name ${name}`);
+      if (lines.some(l => l.startsWith('OK'))) {
+        this.writeStatus = 'ok';
+        this.writeMsg    = 'Name updated — reconnect to apply';
+      } else {
+        this.writeStatus = 'error';
+        this.writeMsg    = lines.find(l => l.startsWith('ERROR')) ?? 'Unknown error';
+      }
     } else {
-      this.bleNameStatus = 'error';
-      this.bleNameMsg    = lines.find(l => l.startsWith('ERROR')) ?? 'Unknown error';
+      this.writeStatus = 'ok';
+      this.writeMsg    = 'Written to tag — connect device to update BLE name';
     }
   }
 
@@ -526,6 +528,87 @@ export class AppAdmin extends LitElement {
       flex-shrink: 0;
       user-select: none;
     }
+
+    /* ── Write section ── */
+    .write-section {
+      margin-top: 4px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 14px;
+    }
+
+    .nfc-widget {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .nfc-ring {
+      width: 88px; height: 88px;
+      border-radius: 50%;
+      border: 2px solid #3f3f46;
+      background: #111113;
+      display: flex; align-items: center; justify-content: center;
+      transition: border-color 0.3s;
+    }
+
+    .nfc-ring.scanning {
+      border-color: #3b82f6;
+      animation: nfc-pulse 1.5s ease-in-out infinite;
+    }
+
+    .nfc-ring.done  { border-color: #22c55e; }
+    .nfc-ring.error { border-color: #ef4444; }
+
+    @keyframes nfc-pulse {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(59,130,246,0.45); }
+      50%       { box-shadow: 0 0 0 18px rgba(59,130,246,0); }
+    }
+
+    .nfc-label {
+      font-family: var(--mono);
+      font-size: 0.75rem;
+      color: var(--muted-fg);
+      text-align: center;
+    }
+
+    .nfc-label.scanning { color: #60a5fa; }
+    .nfc-label.done     { color: #22c55e; }
+    .nfc-label.error    { color: #f87171; }
+
+    .write-steps {
+      width: 100%;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .wstep {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 0.78rem;
+      font-family: var(--mono);
+      color: var(--muted-fg);
+    }
+
+    .wstep-dot {
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      background: #3f3f46;
+      flex-shrink: 0;
+    }
+
+    .wstep.active .wstep-dot { background: #60a5fa; }
+    .wstep.done   .wstep-dot { background: #22c55e; }
+    .wstep.error  .wstep-dot { background: #f87171; }
+    .wstep.active             { color: #93c5fd; }
+    .wstep.done               { color: #4ade80; }
+    .wstep.error              { color: #f87171; }
+
+    .wstep-skip { color: #52525b; margin-left: 4px; }
   `;
 
   // ── Render ────────────────────────────────────────────────────────────
@@ -565,11 +648,7 @@ export class AppAdmin extends LitElement {
               </li>
               <li>
                 <span class="step-num">2</span>
-                <span>Tap <strong>Write to Device</strong> while connected via Bluetooth to rename the device. You will need to reconnect afterwards.</span>
-              </li>
-              <li>
-                <span class="step-num">3</span>
-                <span>Hold an NFC tag close to the phone and tap <strong>Write to Tag</strong> to program the tag with the device name. This tag can later be scanned on the Connect page to connect automatically.</span>
+                <span>Tap <strong>Write to Tag + Device</strong>. Hold an NFC tag to the phone — the name is written to the tag, then sent to the device via BLE automatically.</span>
               </li>
             </ol>
 
@@ -581,35 +660,69 @@ export class AppAdmin extends LitElement {
                 placeholder="e.g. A3F2B1C0"
                 .value=${this.deviceSuffix}
                 @input=${(e: Event) => {
-                  this.deviceSuffix  = (e.target as HTMLInputElement).value;
-                  this.nfcStatus     = 'idle';
-                  this.bleNameStatus = 'idle';
+                  this.deviceSuffix = (e.target as HTMLInputElement).value;
+                  this.writeStatus  = 'idle';
+                  this.writeMsg     = '';
                 }}
               />
               <button class="btn btn-generate" @click=${this._generateName}>Generate</button>
             </div>
 
-            <div class="action-row">
-              <span class="action-label">Write to device via BLE</span>
-              <button class="btn"
-                ?disabled=${noName || dis || this.bleNameStatus === 'running'}
-                @click=${this._writeNameToDevice}>
-                ${this.bleNameStatus === 'running' ? 'Sending…' : 'Write to Device'}
-              </button>
-              ${this._badge(this.bleNameStatus, this.bleNameMsg)}
-            </div>
+            <div class="write-section">
+              ${this.writeStatus !== 'idle' ? html`
+                <div class="nfc-widget">
+                  <div class="nfc-ring ${
+                    this.writeStatus === 'nfc'                                    ? 'scanning'
+                    : ['nfc-done','ble','ok'].includes(this.writeStatus)          ? 'done'
+                    : this.writeStatus === 'error'                                ? 'error'
+                    : ''}">
+                    <svg width="40" height="40" viewBox="0 0 24 24" fill="${
+                      ['nfc-done','ble','ok'].includes(this.writeStatus) ? '#22c55e'
+                      : this.writeStatus === 'error'                    ? '#f87171'
+                      : '#60a5fa'}">
+                      <path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 14H5.17L4 17.17V4h16v12z"/>
+                      <path d="M6 15h2v-2H6v2zm0-4h2V9H6v2zm0-4h2V5H6v2zm4 8h2v-2h-2v2zm0-4h2V9h-2v2zm0-4h2V5h-2v2zm4 8h2v-2h-2v2zm0-4h2V9h-2v2zm0-4h2V5h-2v2z"/>
+                    </svg>
+                  </div>
+                  <span class="nfc-label ${
+                    this.writeStatus === 'nfc'                                    ? 'scanning'
+                    : ['nfc-done','ble','ok'].includes(this.writeStatus)          ? 'done'
+                    : this.writeStatus === 'error'                                ? 'error'
+                    : ''}">
+                    ${this.writeStatus === 'nfc'      ? 'Hold RFID tag to phone…'
+                    : this.writeStatus === 'nfc-done' ? 'Tag written'
+                    : this.writeStatus === 'ble'      ? 'Sending to device…'
+                    : this.writeStatus === 'ok'       ? this.writeMsg
+                    : this.writeMsg}
+                  </span>
+                </div>
 
-            <div class="action-row">
-              <span class="action-label">Write to NFC tag</span>
-              <button class="btn"
-                ?disabled=${noName || this.nfcStatus === 'running'}
-                @click=${this._writeNameToRfid}>
-                ${this.nfcStatus === 'running' ? 'Hold tag…' : 'Write to Tag'}
-              </button>
-              ${this._badge(this.nfcStatus, this.nfcMsg)}
-              ${this.nfcStatus === 'running' ? html`
-                <span class="hint">Hold an NFC tag close to the phone</span>
+                <div class="write-steps">
+                  <div class="wstep ${
+                    this.writeStatus === 'nfc'                             ? 'active'
+                    : ['nfc-done','ble','ok'].includes(this.writeStatus)   ? 'done'
+                    : this.writeStatus === 'error'                         ? 'error'
+                    : ''}">
+                    <div class="wstep-dot"></div>Write name to RFID tag
+                  </div>
+                  <div class="wstep ${
+                    this.writeStatus === 'ble'  ? 'active'
+                    : this.writeStatus === 'ok' ? 'done'
+                    : ''}">
+                    <div class="wstep-dot"></div>Send BLE name to device
+                    ${!this.connected ? html`<span class="wstep-skip">(skipped — not connected)</span>` : ''}
+                  </div>
+                </div>
               ` : ''}
+
+              <button class="btn"
+                ?disabled=${noName || this.writeStatus === 'nfc' || this.writeStatus === 'nfc-done' || this.writeStatus === 'ble'}
+                @click=${this._writeName}>
+                ${this.writeStatus === 'nfc'      ? 'Hold tag to phone…'
+                : this.writeStatus === 'ble'      ? 'Sending to device…'
+                : this.writeStatus === 'ok'       ? 'Write Again'
+                : 'Write to Tag + Device'}
+              </button>
             </div>
           </div>
 

@@ -234,6 +234,63 @@ export class AppAbout extends LitElement {
     }
 
     .author-link:hover { color: var(--fg); border-color: #52525b; }
+
+    /* ── Capabilities ── */
+    .cap-row {
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+      padding: 10px 0;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .cap-row:last-child { border-bottom: none; }
+
+    .cap-icon {
+      width: 30px; height: 30px;
+      border-radius: 7px;
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0;
+      margin-top: 1px;
+    }
+
+    .cap-icon.ok   { background: rgba(34,197,94,0.1);  color: #22c55e; }
+    .cap-icon.fail { background: rgba(239,68,68,0.08); color: #f87171; }
+    .cap-icon svg  { width: 15px; height: 15px; fill: currentColor; }
+
+    .cap-body {
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+    }
+
+    .cap-name {
+      font-size: 0.8125rem;
+      font-weight: 500;
+      color: var(--fg);
+    }
+
+    .cap-hint {
+      font-size: 0.72rem;
+      color: var(--muted-fg);
+      line-height: 1.5;
+    }
+
+    .cap-status {
+      font-family: var(--mono);
+      font-size: 0.65rem;
+      font-weight: 500;
+      padding: 2px 8px;
+      border-radius: 4px;
+      flex-shrink: 0;
+      margin-top: 2px;
+      white-space: nowrap;
+    }
+
+    .cap-status.ok   { color: #22c55e; background: rgba(34,197,94,0.08);  border: 1px solid rgba(34,197,94,0.2); }
+    .cap-status.fail { color: #f87171; background: rgba(239,68,68,0.06);  border: 1px solid rgba(239,68,68,0.2); }
   `;
 
   render() {
@@ -332,6 +389,56 @@ export class AppAbout extends LitElement {
               <a class="author-link" href="https://www.linkedin.com/in/nathaniel-walser/" target="_blank" rel="noopener">LinkedIn</a>
             </div>
           </div>
+
+          <!-- Browser Capabilities -->
+          ${(() => {
+            const caps = [
+              {
+                name: 'Secure Context (HTTPS)',
+                ok: window.isSecureContext,
+                hint: 'Required by all Web APIs. Ensure the app is served over HTTPS or localhost.',
+              },
+              {
+                name: 'Web Bluetooth',
+                ok: !!navigator.bluetooth,
+                hint: 'Requires Chrome on Android, or Chrome 56+ on desktop with the "Experimental Web Platform features" flag enabled.',
+              },
+              {
+                name: 'Web NFC',
+                ok: 'NDEFReader' in window,
+                hint: 'Requires Chrome on Android 9+. Not supported on iOS or desktop browsers.',
+              },
+              {
+                name: 'Geolocation',
+                ok: 'geolocation' in navigator,
+                hint: 'Available in most modern browsers over HTTPS. Location permission must be granted.',
+              },
+              {
+                name: 'Service Worker',
+                ok: 'serviceWorker' in navigator,
+                hint: 'Requires a modern browser in a secure context. Needed for offline support and PWA install.',
+              },
+            ];
+            return html`
+              <div class="card">
+                <div class="card-title">Browser Capabilities</div>
+                ${caps.map(c => html`
+                  <div class="cap-row">
+                    <div class="cap-icon ${c.ok ? 'ok' : 'fail'}">
+                      ${c.ok
+                        ? html`<svg viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z"/></svg>`
+                        : html`<svg viewBox="0 0 24 24"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12 19 6.41z"/></svg>`}
+                    </div>
+                    <div class="cap-body">
+                      <span class="cap-name">${c.name}</span>
+                      ${!c.ok ? html`<span class="cap-hint">${c.hint}</span>` : ''}
+                    </div>
+                    <span class="cap-status ${c.ok ? 'ok' : 'fail'}">${c.ok ? 'available' : 'unavailable'}</span>
+                  </div>
+                `)}
+              </div>
+            `;
+          })()}
 
           <!-- Technical info -->
           <div class="card">

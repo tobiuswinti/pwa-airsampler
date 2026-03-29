@@ -1,6 +1,6 @@
 import { LitElement, css, html } from 'lit';
 import { state, customElement } from 'lit/decorators.js';
-import { doc, getDoc, Timestamp } from 'firebase/firestore';
+import { doc, getDoc, DocumentReference, Timestamp } from 'firebase/firestore';
 import { db } from '../firebase';
 import { DeviceRun } from '../device-log-store';
 
@@ -86,8 +86,11 @@ function lastVal(run: DeviceRun, field: string): number | null {
 export class AppCloudRun extends LitElement {
 
   @state() private run: DeviceRun | null = null;
-  @state() private loading = true;
-  @state() private error   = '';
+  @state() private loading    = true;
+  @state() private error      = '';
+  @state() private _uploader: { displayName: string | null; email: string | null } | null = null;
+  @state() private _rowCount  = 0;
+  @state() private _appVersion = '';
 
   private _onHash = () => this._load();
 
@@ -106,38 +109,95 @@ export class AppCloudRun extends LitElement {
     const match = window.location.hash.match(/^#cloud-run\/(.+)$/);
     if (!match) { this.loading = false; this.error = 'Invalid URL'; return; }
     const docId = match[1];
-    this.loading = true; this.error = '';
+    this.loading = true; this.error = ''; this._uploader = null; this._rowCount = 0; this._appVersion = '';
 
     try {
       const snap = await getDoc(doc(db, 'device_runs', docId));
       if (!snap.exists()) { this.loading = false; this.error = 'Run not found in cloud.'; return; }
       const d = snap.data();
 
-      const uploadedAt = d['uploadedAt'] instanceof Timestamp ? d['uploadedAt'].toMillis() : Number(d['uploadedAt'] ?? 0);
-      const meta = d['meta'] ?? {};
+      const uploadedAt = d['uploadedAt'] instanceof Timestamp
+        ? d['uploadedAt'].toMillis() : Number(d['uploadedAt'] ?? 0);
 
-      // Reconstruct rows from csvRows
-      const csvRows: string[] = d['csvRows'] ?? [];
-      const rows = csvRows.map((r: string) => r.split(','));
+      let fields: string[], units: string[], rows: string[][];
 
-      this.run = {
-        id:             Number(d['deviceRunId'] ?? 0),
-        downloadedAt:   Number(d['downloadedAt'] ?? 0),
-        fields:         d['fields']  ?? [],
-        units:          d['units']   ?? [],
-        meta: {
-          startTime: Number(meta['startTime'] ?? d['startTime'] ?? 0),
-          interval:  Number(meta['interval']  ?? 1000),
-          tagId:     meta['tagId']  ?? d['tagId'] ?? '',
-          lat:       meta['lat']    ?? '',
-          lon:       meta['lon']    ?? '',
-          states:    meta['states'] ?? '',
-        },
-        rows,
-        firebaseId:      docId,
-        cloudUploadedAt: uploadedAt,
-      };
+      if ((d['schemaVersion'] ?? 1) >= 2) {
+        // ── v2 schema ──────────────────────────────────────────────────
+        const cols: Array<{ name: string; unit: string; data: (number | null)[] }> = d['columns'] ?? [];
+        fields = cols.map(c => c.name);
+        units  = cols.map(c => c.unit ?? '');
+        const len = cols[0]?.data?.length ?? 0;
+        rows = Array.from({ length: len }, (_, i) =>
+          cols.map(c => { const v = c.data[i]; return v === null || v === undefined ? '' : String(v); })
+        );
+
+        const loc = d['location'] as { lat: number; lon: number } | null;
+        const startMs = d['startTime'] instanceof Timestamp
+          ? d['startTime'].toMillis() : Number(d['startTime'] ?? 0);
+        const dlMs = d['downloadedAt'] instanceof Timestamp
+          ? d['downloadedAt'].toMillis() : Number(d['downloadedAt'] ?? 0);
+
+        this.run = {
+          id:           Number(d['deviceRunId'] ?? 0),
+          downloadedAt: dlMs,
+          fields, units, rows,
+          meta: {
+            startTime:  startMs,
+            interval:   Number(d['interval'] ?? 1000),
+            tagId:      String(d['tagId']      ?? ''),
+            deviceName: String(d['deviceName'] ?? ''),
+            lat:        loc ? String(loc.lat) : '',
+            lon:        loc ? String(loc.lon) : '',
+            states:     Array.isArray(d['states']) ? (d['states'] as string[]).join(',') : '',
+            runId:      d['runId'] ? String(d['runId']) : undefined,
+          },
+          firebaseId:      docId,
+          cloudUploadedAt: uploadedAt,
+        };
+      } else {
+        // ── v1 schema (legacy) ─────────────────────────────────────────
+        const meta = d['meta'] ?? {};
+        const csvRows: string[] = d['csvRows'] ?? [];
+        rows = csvRows.map((r: string) => r.split(','));
+        fields = d['fields'] ?? [];
+        units  = d['units']  ?? [];
+
+        this.run = {
+          id:           Number(d['deviceRunId'] ?? 0),
+          downloadedAt: Number(d['downloadedAt'] ?? 0),
+          fields, units, rows,
+          meta: {
+            startTime:  Number(meta['startTime'] ?? d['startTime'] ?? 0),
+            interval:   Number(meta['interval']  ?? 1000),
+            tagId:      String(meta['tagId']  ?? d['tagId'] ?? ''),
+            deviceName: String(meta['deviceName'] ?? d['deviceName'] ?? ''),
+            lat:        meta['lat'] ?? '',
+            lon:        meta['lon'] ?? '',
+            states:     meta['states'] ?? '',
+          },
+          firebaseId:      docId,
+          cloudUploadedAt: uploadedAt,
+        };
+      }
+
       document.title = `AirSampler — ${this.run.meta.tagId || `Run #${this.run.id}`}`;
+      this._rowCount   = Number(d['rowCount'] ?? this.run.rows.length);
+      this._appVersion = String(d['appVersion'] ?? '');
+
+      // Resolve uploader reference
+      const uploaderRef = d['uploadedBy'] as DocumentReference | undefined;
+      if (uploaderRef?.path) {
+        try {
+          const uSnap = await getDoc(uploaderRef);
+          if (uSnap.exists()) {
+            const u = uSnap.data();
+            this._uploader = {
+              displayName: u['displayName'] ?? null,
+              email:       u['email']       ?? null,
+            };
+          }
+        } catch { /* ignore — non-critical */ }
+      }
     } catch (err: any) {
       this.error = err?.message ?? 'Failed to load run from cloud.';
     } finally {
@@ -431,9 +491,18 @@ export class AppCloudRun extends LitElement {
                 <span class="info-value">${fmtElapsed(duration)}</span>
               </div>
               <div class="info-row">
+                <span class="info-label">Rows</span>
+                <span class="info-value">${this._rowCount.toLocaleString()}</span>
+              </div>
+              <div class="info-row">
                 <span class="info-label">Interval</span>
                 <span class="info-value">${run.meta.interval} ms</span>
               </div>
+              ${run.meta.deviceName ? html`
+                <div class="info-row">
+                  <span class="info-label">Device</span>
+                  <span class="info-value">${run.meta.deviceName}</span>
+                </div>` : ''}
               ${run.meta.tagId ? html`
                 <div class="info-row">
                   <span class="info-label">Sample ID</span>
@@ -443,6 +512,16 @@ export class AppCloudRun extends LitElement {
                 <div class="info-row">
                   <span class="info-label">Uploaded</span>
                   <span class="info-value">${fmtDate(run.cloudUploadedAt)}</span>
+                </div>` : ''}
+              ${this._uploader ? html`
+                <div class="info-row">
+                  <span class="info-label">Uploaded by</span>
+                  <span class="info-value">${this._uploader.displayName ?? this._uploader.email ?? '—'}</span>
+                </div>` : ''}
+              ${this._appVersion ? html`
+                <div class="info-row">
+                  <span class="info-label">App version</span>
+                  <span class="info-value">${this._appVersion}</span>
                 </div>` : ''}
               ${hasLocation ? html`
                 <div class="info-row">
