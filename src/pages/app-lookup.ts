@@ -111,11 +111,37 @@ export class AppLookup extends LitElement {
     } catch { /* ignore */ }
     this.searching = false;
     this.searched  = true;
+    this._autoNavigate();
+  }
+
+  private _autoNavigate() {
+    const entries = this._mergedResults();
+    if (entries.length !== 1) return;
+    const e = entries[0];
+    window.location.hash = e.type === 'cloud'
+      ? `cloud-run/${e.cloud!.firebaseDocId}`
+      : `run/${e.local!.id}`;
   }
 
   private _applyLocalFilter(tag: string) {
     const upper = tag.toUpperCase();
-    this.localResults = this.allRuns.filter(r => r.meta?.tagId?.toUpperCase() === upper);
+    // Only keep local runs not yet synced to cloud
+    this.localResults = this.allRuns.filter(
+      r => r.meta?.tagId?.toUpperCase() === upper && !r.firebaseId
+    );
+  }
+
+  /** Merge cloud + unsynced local into one list sorted by startTime desc */
+  private _mergedResults(): Array<{ type: 'cloud'; cloud: CloudDoc } | { type: 'local'; local: DeviceRun }> {
+    const out: Array<{ type: 'cloud'; cloud: CloudDoc } | { type: 'local'; local: DeviceRun }> = [
+      ...this.cloudResults.map(c => ({ type: 'cloud' as const, cloud: c })),
+      ...this.localResults.map(l => ({ type: 'local' as const, local: l })),
+    ];
+    return out.sort((a, b) => {
+      const ta = a.type === 'cloud' ? a.cloud.startTime : a.local.meta.startTime;
+      const tb = b.type === 'cloud' ? b.cloud.startTime : b.local.meta.startTime;
+      return tb - ta;
+    });
   }
 
   private _clear() {
@@ -360,6 +386,18 @@ export class AppLookup extends LitElement {
 
     .run-date { font-family: var(--mono); font-size: 0.65rem; color: var(--muted-fg); }
 
+    .run-type-icon {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      width: 24px; height: 24px;
+      border-radius: 6px;
+    }
+
+    .run-type-icon.cloud { color: #22c55e; background: rgba(34,197,94,0.1); }
+    .run-type-icon.local { color: #f59e0b; background: rgba(245,158,11,0.1); }
+
     .run-badge {
       font-family: var(--mono);
       font-size: 0.65rem;
@@ -417,7 +455,7 @@ export class AppLookup extends LitElement {
       <main>
         <div class="page-header">
           <a class="back-btn" href="${resolveRouterPath()}">←</a>
-          <span class="page-title">Tag Lookup</span>
+          <span class="page-title">Sample Lookup</span>
         </div>
 
         <div class="content">
@@ -468,55 +506,53 @@ export class AppLookup extends LitElement {
             <p class="prompt-msg">Searching…</p>
           ` : html`
 
-            <!-- Local results -->
+            <!-- Unified results -->
             <div class="card">
               <div class="section-header">
-                <span class="section-title">Local</span>
-                <span class="section-count">${this.localResults.length}</span>
+                <span class="section-title">Results</span>
+                <span class="section-count">${this._mergedResults().length}</span>
               </div>
-              ${this.localResults.length === 0
-                ? html`<div class="empty-msg">No local run with tag "${tag}".</div>`
-                : this.localResults.map(run => {
-                    const badge = run.firebaseId ? 'cloud'
-                      : run.uploadError ? 'error' : 'local';
-                    const badgeLabel = run.firebaseId ? 'in cloud'
-                      : run.uploadError ? 'upload error' : 'pending upload';
-                    return html`
-                      <div class="run-row">
-                        <div class="run-info">
-                          <span class="run-name">${run.meta?.tagId || `Run #${run.id}`}</span>
-                          <div class="run-meta">
-                            ${run.meta?.deviceName ? html`<span class="run-device">${run.meta.deviceName}</span>` : ''}
-                            <span class="run-date">${this._fmtDate(run.meta.startTime)}</span>
+              ${this._mergedResults().length === 0
+                ? html`<div class="empty-msg">No runs found for tag "${tag}".</div>`
+                : this._mergedResults().map(entry => {
+                    if (entry.type === 'cloud') {
+                      const d = entry.cloud;
+                      return html`
+                        <div class="run-row">
+                          <span class="run-type-icon cloud" title="Synced to cloud">
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor">
+                              <path d="M19.35 10.04A7.49 7.49 0 0012 4C9.11 4 6.6 5.64 5.35 8.04A5.994 5.994 0 000 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96z"/>
+                            </svg>
+                          </span>
+                          <div class="run-info">
+                            <span class="run-name">${d.tagId || d.firebaseDocId.slice(0, 8)}</span>
+                            <div class="run-meta">
+                              ${d.deviceName ? html`<span class="run-device">${d.deviceName}</span>` : ''}
+                              <span class="run-date">${this._fmtDate(d.startTime)}</span>
+                            </div>
                           </div>
-                        </div>
-                        <span class="run-badge ${badge}">${badgeLabel}</span>
-                        <a class="btn-sm" href="#run/${run.id}">View</a>
-                      </div>`;
+                          <a class="btn-sm" href="#cloud-run/${d.firebaseDocId}">View</a>
+                        </div>`;
+                    } else {
+                      const run = entry.local;
+                      return html`
+                        <div class="run-row">
+                          <span class="run-type-icon local" title="Local only">
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor">
+                              <path d="M17 12h-5v5h5v-5zM16 1v2H8V1H6v2H5c-1.11 0-1.99.9-1.99 2L3 19c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2h-1V1h-2zm3 18H5V8h14v11z"/>
+                            </svg>
+                          </span>
+                          <div class="run-info">
+                            <span class="run-name">${run.meta?.tagId || `Run #${run.id}`}</span>
+                            <div class="run-meta">
+                              ${run.meta?.deviceName ? html`<span class="run-device">${run.meta.deviceName}</span>` : ''}
+                              <span class="run-date">${this._fmtDate(run.meta.startTime)}</span>
+                            </div>
+                          </div>
+                          <a class="btn-sm" href="#run/${run.id}">View</a>
+                        </div>`;
+                    }
                   })
-              }
-            </div>
-
-            <!-- Cloud results -->
-            <div class="card">
-              <div class="section-header">
-                <span class="section-title">Cloud</span>
-                <span class="section-count">${this.cloudResults.length}</span>
-              </div>
-              ${this.cloudResults.length === 0
-                ? html`<div class="empty-msg">No cloud run with tag "${tag}".</div>`
-                : this.cloudResults.map(d => html`
-                    <div class="run-row">
-                      <div class="run-info">
-                        <span class="run-name">${d.tagId || d.firebaseDocId.slice(0, 8)}</span>
-                        <div class="run-meta">
-                          ${d.deviceName ? html`<span class="run-device">${d.deviceName}</span>` : ''}
-                          <span class="run-date">${this._fmtDate(d.startTime)}</span>
-                        </div>
-                      </div>
-                      <a class="btn-sm" href="#cloud-run/${d.firebaseDocId}">View</a>
-                    </div>
-                  `)
               }
             </div>
 

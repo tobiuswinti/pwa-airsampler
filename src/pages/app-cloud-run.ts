@@ -362,7 +362,7 @@ export class AppCloudRun extends LitElement {
     if (this.loading) return html`
       <main>
         <div class="page-header">
-          <a class="back-btn" href="#sample">←</a>
+          <a class="back-btn" href="#lookup">←</a>
           <span class="page-title">Loading…</span>
         </div>
         <p class="state-msg">Loading run from cloud…</p>
@@ -371,7 +371,7 @@ export class AppCloudRun extends LitElement {
     if (this.error || !this.run) return html`
       <main>
         <div class="page-header">
-          <a class="back-btn" href="#sample">←</a>
+          <a class="back-btn" href="#lookup">←</a>
           <span class="page-title">Error</span>
         </div>
         <p class="state-msg">${this.error || 'Run not found.'}</p>
@@ -393,7 +393,7 @@ export class AppCloudRun extends LitElement {
     return html`
       <main>
         <div class="page-header">
-          <a class="back-btn" href="#sample">←</a>
+          <a class="back-btn" href="#lookup">←</a>
           <span class="page-title">${runName}</span>
           <div class="header-actions">
             <button class="btn-sm" @click=${this._download}>CSV</button>

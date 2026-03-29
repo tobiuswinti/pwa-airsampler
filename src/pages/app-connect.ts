@@ -197,6 +197,47 @@ export class AppConnect extends LitElement {
     .btn-connect:hover:not(:disabled)  { opacity: 0.88; }
     .btn-connect:disabled { opacity: 0.35; cursor: not-allowed; }
 
+    /* ── NFC widget ── */
+    .nfc-widget {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 14px;
+    }
+
+    .nfc-ring {
+      width: 88px; height: 88px;
+      border-radius: 50%;
+      border: 2px solid #3f3f46;
+      background: #111113;
+      display: flex; align-items: center; justify-content: center;
+      transition: border-color 0.3s;
+    }
+
+    .nfc-ring.scanning {
+      border-color: #3b82f6;
+      animation: nfc-pulse 1.5s ease-in-out infinite;
+    }
+
+    .nfc-ring.found {
+      border-color: #22c55e;
+    }
+
+    @keyframes nfc-pulse {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(59,130,246,0.45); }
+      50%       { box-shadow: 0 0 0 18px rgba(59,130,246,0); }
+    }
+
+    .nfc-label {
+      font-family: var(--mono);
+      font-size: 0.75rem;
+      color: var(--muted-fg);
+      text-align: center;
+    }
+
+    .nfc-label.scanning { color: #60a5fa; }
+    .nfc-label.found    { color: #22c55e; }
+
     .compat-box {
       width: 100%;
       padding: 12px 14px;
@@ -214,11 +255,6 @@ export class AppConnect extends LitElement {
     const connecting   = this.connStatus === 'connecting';
     const bleSupported = !!navigator.bluetooth;
 
-    const nfcLabel =
-      this.nfcStatus === 'scanning' ? 'Scanning for RFID tag…' :
-      this.nfcStatus === 'found'    ? `Tag found: ${this.scannedName} — connecting…` :
-      null;
-
     return html`
       <main>
         <div class="page-header">
@@ -235,6 +271,23 @@ export class AppConnect extends LitElement {
             </div>
           ` : ''}
 
+          ${this.nfcStatus === 'scanning' || this.nfcStatus === 'found' ? html`
+            <div class="nfc-widget">
+              <div class="nfc-ring ${this.nfcStatus}">
+                <svg width="40" height="40" viewBox="0 0 24 24"
+                  fill="${this.nfcStatus === 'found' ? '#22c55e' : '#60a5fa'}">
+                  <path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 14H5.17L4 17.17V4h16v12z"/>
+                  <path d="M6 15h2v-2H6v2zm0-4h2V9H6v2zm0-4h2V5H6v2zm4 8h2v-2h-2v2zm0-4h2V9h-2v2zm0-4h2V5h-2v2zm4 8h2v-2h-2v2zm0-4h2V9h-2v2zm0-4h2V5h-2v2z"/>
+                </svg>
+              </div>
+              <span class="nfc-label ${this.nfcStatus}">
+                ${this.nfcStatus === 'found'
+                  ? `Tag found: ${this.scannedName} — connecting…`
+                  : 'Hold RFID tag near phone…'}
+              </span>
+            </div>
+          ` : ''}
+
           <div class="ble-visual ${connecting ? 'scanning' : ''}">
             <div class="ring"></div>
             <div class="ring"></div>
@@ -244,17 +297,12 @@ export class AppConnect extends LitElement {
             </div>
           </div>
 
-          ${nfcLabel ? html`
-            <p class="status-text ${this.nfcStatus === 'found' ? 'connecting' : ''}">
-              ${nfcLabel}
-            </p>
-          ` : html`
-            <p class="status-text ${this.connStatus}">
-              ${connecting                   ? 'Connecting to device…'
-              : this.connStatus === 'failed' ? 'Connection failed — try again'
-              : 'Hold an RFID tag to connect, or tap below'}
-            </p>
-          `}
+          <p class="status-text ${connecting ? 'connecting' : this.connStatus === 'failed' ? 'failed' : ''}">
+            ${connecting                   ? 'Connecting to device…'
+            : this.connStatus === 'failed' ? 'Connection failed — try again'
+            : this.nfcStatus === null      ? 'Hold an RFID tag to connect, or tap below'
+            : ''}
+          </p>
 
           <button class="btn-connect"
             ?disabled=${!bleSupported || connecting}
