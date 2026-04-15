@@ -6,6 +6,33 @@ import { bleService } from '../ble-service';
 
 type StepStatus = 'idle' | 'running' | 'ok' | 'error';
 
+// Lookup: flowrate (L/s, calibrated at freeflow) → power consumption (W) at 12.9 V
+const FLOW_POWER_LUT: Array<{ flow: number; power: number }> = [
+  { flow: 1.16, power: 1.0 },
+  { flow: 1.33, power: 1.1 },
+  { flow: 1.74, power: 1.1 },
+  { flow: 2.07, power: 1.4 },
+  { flow: 2.41, power: 1.6 },
+  { flow: 2.82, power: 1.8 },
+  { flow: 3.32, power: 2.0 },
+  { flow: 3.57, power: 2.3 },
+  { flow: 3.98, power: 2.7 },
+  { flow: 4.31, power: 2.9 },
+];
+
+function interpolatePower(flowrate: number): number {
+  const lut = FLOW_POWER_LUT;
+  if (flowrate <= lut[0].flow) return lut[0].power;
+  if (flowrate >= lut[lut.length - 1].flow) return lut[lut.length - 1].power;
+  for (let i = 1; i < lut.length; i++) {
+    if (flowrate <= lut[i].flow) {
+      const t = (flowrate - lut[i - 1].flow) / (lut[i].flow - lut[i - 1].flow);
+      return lut[i - 1].power + t * (lut[i].power - lut[i - 1].power);
+    }
+  }
+  return lut[lut.length - 1].power;
+}
+
 @customElement('app-control')
 export class AppControl extends LitElement {
 
@@ -14,11 +41,13 @@ export class AppControl extends LitElement {
   @state() private tagId     = '';
   @state() private lat       = '';
   @state() private lon       = '';
-  @state() private flowrateSP   = '1.0';
+  @state() private flowrateSP   = '1.3';
   @state() private durationH    = '1';
   @state() private delayH       = '0';
   @state() private maxHumidity  = '100';
   @state() private minSoC       = '2';
+  @state() private batteryWh    = '72';
+  @state() private socOverride  = '';
 
   @state() private nfcScanning  = false;
   @state() private nfcAvailable = false;
@@ -33,11 +62,13 @@ export class AppControl extends LitElement {
   @state() private flowRunning = false;
 
   private nfcAbort: AbortController | null = null;
-  private _onStatus = () => { this.connected = bleService.connStatus === 'connected'; };
+  private _onStatus    = () => { this.connected = bleService.connStatus === 'connected'; };
+  private _onLiveState = () => { this.requestUpdate(); };
 
   connectedCallback() {
     super.connectedCallback();
     bleService.addEventListener('status-changed', this._onStatus);
+    bleService.addEventListener('state-changed', this._onLiveState);
     if ('NDEFReader' in window) { this.nfcAvailable = true; this._scanNfc(); }
     const last = getLastRfidTag();
     if (last) this.tagId = last;
@@ -47,7 +78,30 @@ export class AppControl extends LitElement {
   disconnectedCallback() {
     super.disconnectedCallback();
     bleService.removeEventListener('status-changed', this._onStatus);
+    bleService.removeEventListener('state-changed', this._onLiveState);
     this._stopNfc();
+  }
+
+  /* ── Estimated sampling time ── */
+  /* ── Energy budget ── */
+  private _energyBudget(): { whUsed: number; whRemaining: number; startWh: number; reservedWh: number; usableWh: number } | null {
+    const flow     = parseFloat(this.flowrateSP);
+    const wh       = parseFloat(this.batteryWh);
+    const overrideVal = parseFloat(this.socOverride);
+    const curSoc   = !isNaN(overrideVal) && this.socOverride !== ''
+      ? overrideVal
+      : (bleService.liveState?.soc ?? null);
+    const minSoc   = parseFloat(this.minSoC) || 0;
+    const delayH   = parseFloat(this.delayH) || 0;
+    const durH     = parseFloat(this.durationH) || 0;
+    if (isNaN(flow) || isNaN(wh) || curSoc === null) return null;
+    const startWh    = wh * (curSoc / 100);
+    const reservedWh = wh * (minSoc / 100);
+    const usableWh   = Math.max(0, startWh - reservedWh);
+    const whIdle     = 0.7 * delayH;
+    const whSampling = interpolatePower(flow) * durH;
+    const whUsed     = whIdle + whSampling;
+    return { whUsed, whRemaining: usableWh - whUsed, startWh, reservedWh, usableWh };
   }
 
   /* ── Flow ── */
@@ -77,11 +131,20 @@ export class AppControl extends LitElement {
 
     this.stepSampling = 'running';
     let cmd = 'startSampling';
-    if (this.flowrateSP)  cmd += ` -flowrate ${this.flowrateSP}`;
+    if (this.flowrateSP) {
+      const sp = Math.min(4.2, Math.max(1.3, parseFloat(this.flowrateSP)));
+      cmd += ` -flowrate ${sp}`;
+    }
     if (this.durationH)   cmd += ` -durationS ${Math.round(parseFloat(this.durationH) * 3600)}`;
     if (this.delayH && this.delayH !== '0') cmd += ` -delayS ${Math.round(parseFloat(this.delayH) * 3600)}`;
-    if (this.maxHumidity) cmd += ` -maxHumidity ${this.maxHumidity}`;
-    if (this.minSoC)      cmd += ` -minSoC ${this.minSoC}`;
+    if (this.maxHumidity) {
+      const hum = Math.min(100, Math.max(0, parseFloat(this.maxHumidity)));
+      cmd += ` -maxHumidity ${hum}`;
+    }
+    if (this.minSoC) {
+      const soc = Math.min(100, Math.max(2, parseFloat(this.minSoC)));
+      cmd += ` -minSoC ${soc}`;
+    }
     const sampLines = await bleService.sendCmd(cmd);
     if (!this._isOk(sampLines)) {
       this.stepSampling = 'error'; this.stepError = sampLines[0] ?? 'startSampling failed';
@@ -411,6 +474,103 @@ export class AppControl extends LitElement {
       color: var(--muted-fg);
     }
 
+    .param-hint {
+      font-size: 0.6rem;
+      color: var(--muted-fg);
+      opacity: 0.7;
+    }
+
+    .param-hint-btn {
+      font-family: var(--sans);
+      font-size: 0.6rem;
+      color: #3b82f6;
+      background: none;
+      border: none;
+      padding: 0;
+      cursor: pointer;
+      text-align: left;
+      opacity: 0.85;
+    }
+    .param-hint-btn:hover { opacity: 1; text-decoration: underline; }
+
+    .budget-na {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .budget-table {
+      display: flex;
+      flex-direction: column;
+      gap: 0;
+      border-radius: 8px;
+      overflow: hidden;
+      border: 1px solid var(--border);
+    }
+
+    .budget-table.deficit {
+      border-color: rgba(239, 68, 68, 0.5);
+    }
+
+    .budget-row {
+      display: grid;
+      grid-template-columns: 1fr auto auto;
+      align-items: center;
+      gap: 16px;
+      padding: 9px 14px;
+      background: var(--surface, transparent);
+    }
+
+    .budget-row:not(:last-child) {
+      border-bottom: 1px solid var(--border);
+    }
+
+    .budget-row.separator {
+      border-top: 2px solid var(--border);
+      background: rgba(0,0,0,0.03);
+    }
+
+    .budget-row.deficit-row {
+      background: rgba(239, 68, 68, 0.08);
+    }
+
+    .budget-label {
+      font-size: 0.75rem;
+      font-weight: 500;
+      color: var(--fg);
+    }
+
+    .budget-equation {
+      font-size: 0.7rem;
+      color: var(--muted-fg);
+      font-variant-numeric: tabular-nums;
+      white-space: nowrap;
+    }
+
+    .budget-wh {
+      font-size: 0.875rem;
+      font-weight: 600;
+      color: var(--fg);
+      font-variant-numeric: tabular-nums;
+      text-align: right;
+      white-space: nowrap;
+      min-width: 70px;
+    }
+
+    .budget-wh.deficit-val {
+      color: #ef4444;
+    }
+
+    .budget-warning {
+      grid-column: 1 / -1;
+      font-size: 0.6875rem;
+      font-weight: 500;
+      color: #ef4444;
+      padding: 6px 14px 8px;
+      background: rgba(239, 68, 68, 0.08);
+      border-top: 1px solid rgba(239, 68, 68, 0.2);
+    }
+
     /* ── Presets ── */
     .presets {
       display: flex;
@@ -706,7 +866,7 @@ export class AppControl extends LitElement {
                 <div class="param-item">
                   <span class="param-label">Flowrate</span>
                   <div class="presets">
-                    ${['1.0','2.0','4.0'].map(v => html`
+                    ${['1.3','2.0','4.2'].map(v => html`
                       <button class="preset ${this.flowrateSP === v ? 'active' : ''}"
                         ?disabled=${!this.connected}
                         @click=${() => { this.flowrateSP = v; }}>
@@ -715,12 +875,13 @@ export class AppControl extends LitElement {
                     `)}
                   </div>
                   <div class="param-input-wrap">
-                    <input class="input" type="number" placeholder="1.0" step="0.1" min="0"
+                    <input class="input" type="number" placeholder="1.3" step="0.1" min="1.3" max="4.2"
                       .value=${this.flowrateSP}
                       @input=${(e: Event) => { this.flowrateSP = (e.target as HTMLInputElement).value; }}
                       ?disabled=${!this.connected} />
                     <span class="param-unit">L/s</span>
                   </div>
+                  <span class="param-hint">Range: 1.3 – 4.2 L/s</span>
                 </div>
 
                 <div class="param-item">
@@ -741,6 +902,7 @@ export class AppControl extends LitElement {
                       ?disabled=${!this.connected} />
                     <span class="param-unit">%</span>
                   </div>
+                  <span class="param-hint">Range: 0 – 100%</span>
                 </div>
 
                 <div class="param-item">
@@ -755,16 +917,110 @@ export class AppControl extends LitElement {
                     `)}
                   </div>
                   <div class="param-input-wrap">
-                    <input class="input" type="number" placeholder="2" step="1" min="0" max="100"
+                    <input class="input" type="number" placeholder="2" step="1" min="2" max="100"
                       .value=${this.minSoC}
                       @input=${(e: Event) => { this.minSoC = (e.target as HTMLInputElement).value; }}
                       ?disabled=${!this.connected} />
                     <span class="param-unit">%</span>
                   </div>
+                  <span class="param-hint">Range: 2 – 100%</span>
                 </div>
               </div>
 
               ${this.stepError ? html`<div class="error-banner">${this.stepError}</div>` : ''}
+            </div>
+          </div>
+
+          <!-- ④ Power -->
+          <div class="step-card">
+            <div class="step-header">
+              <span class="step-num">04</span>
+              <span class="step-title">Power Budget</span>
+            </div>
+            <div class="step-body">
+              <div class="param-grid">
+                <div class="param-item">
+                  <span class="param-label">Battery Capacity</span>
+                  <div class="param-input-wrap">
+                    <input class="input" type="number" placeholder="72" step="1" min="1"
+                      .value=${this.batteryWh}
+                      @input=${(e: Event) => { this.batteryWh = (e.target as HTMLInputElement).value; }} />
+                    <span class="param-unit">Wh</span>
+                  </div>
+                  <span class="param-hint">Default: 12 V × 6 Ah LiFePO4 = 72 Wh</span>
+                </div>
+
+                <div class="param-item">
+                  <span class="param-label">Current SoC</span>
+                  <div class="param-input-wrap">
+                    <input class="input" type="number" placeholder="${bleService.liveState ? bleService.liveState.soc.toFixed(0) : '—'}" step="1" min="0" max="100"
+                      .value=${this.socOverride}
+                      @input=${(e: Event) => { this.socOverride = (e.target as HTMLInputElement).value; }} />
+                    <span class="param-unit">%</span>
+                  </div>
+                  ${bleService.liveState
+                    ? html`<button class="param-hint-btn" @click=${() => { this.socOverride = bleService.liveState!.soc.toFixed(0); }}>
+                        Use live: ${bleService.liveState.soc.toFixed(0)}%
+                      </button>`
+                    : html`<span class="param-hint">No device — enter manually</span>`}
+                </div>
+              </div>
+
+              <div class="divider"></div>
+
+              <!-- Energy budget -->
+              <!-- Energy budget -->
+              ${(() => {
+                const budget = this._energyBudget();
+                const overrideVal = parseFloat(this.socOverride);
+                const socUsed = !isNaN(overrideVal) && this.socOverride !== ''
+                  ? overrideVal
+                  : bleService.liveState?.soc ?? null;
+                if (budget === null || socUsed === null) return html`
+                  <div class="budget-na">
+                    <span class="param-label">Energy Budget</span>
+                    <span class="param-hint">— enter SoC above or connect device</span>
+                  </div>`;
+                const deficit = budget.whRemaining < 0;
+                const flow = parseFloat(this.flowrateSP);
+                const delayH = parseFloat(this.delayH) || 0;
+                const durH = parseFloat(this.durationH) || 0;
+                const sampPower = interpolatePower(flow);
+                return html`
+                  <div class="budget-table ${deficit ? 'deficit' : ''}">
+                    <div class="budget-row">
+                      <span class="budget-label">Idle (delay)</span>
+                      <span class="budget-equation">0.7 W × ${delayH} h</span>
+                      <span class="budget-wh">${(0.7 * delayH).toFixed(2)} Wh</span>
+                    </div>
+                    <div class="budget-row">
+                      <span class="budget-label">Sampling @ ${flow.toFixed(1)} L/s</span>
+                      <span class="budget-equation">${sampPower.toFixed(2)} W × ${durH} h</span>
+                      <span class="budget-wh">${(sampPower * durH).toFixed(2)} Wh</span>
+                    </div>
+                    <div class="budget-row separator">
+                      <span class="budget-label">Total needed</span>
+                      <span class="budget-equation"></span>
+                      <span class="budget-wh">${budget.whUsed.toFixed(2)} Wh</span>
+                    </div>
+                    <div class="budget-row">
+                      <span class="budget-label">Available</span>
+                      <span class="budget-equation">at ${socUsed.toFixed(0)}% SoC</span>
+                      <span class="budget-wh">${budget.startWh.toFixed(2)} Wh</span>
+                    </div>
+                    <div class="budget-row">
+                      <span class="budget-label">Reserved</span>
+                      <span class="budget-equation">min SoC ${parseFloat(this.minSoC)}% cutoff</span>
+                      <span class="budget-wh">− ${budget.reservedWh.toFixed(2)} Wh</span>
+                    </div>
+                    <div class="budget-row separator ${deficit ? 'deficit-row' : ''}">
+                      <span class="budget-label">Remaining after run</span>
+                      <span class="budget-equation"></span>
+                      <span class="budget-wh ${deficit ? 'deficit-val' : ''}">${budget.whRemaining.toFixed(2)} Wh</span>
+                    </div>
+                    ${deficit ? html`<div class="budget-warning">Insufficient battery — reduce duration or delay</div>` : ''}
+                  </div>`;
+              })()}
             </div>
           </div>
 
